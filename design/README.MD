@@ -89,8 +89,9 @@ The Technical design specification documents the system architecture for the Mic
 |  Currency_URL   | REST API URL to get Currency master data   | /api/cost-management/v1/currency/?filter%5Blimit%5D=15&limit=100&offset=0 |
 |  Costs_URL   | Part of the REST API URL for OpenShift costs  | /api/cost-management/v1/reports/openshift/costs/ |
 |  Usage_URL   | Part of the REST API URL for OpenShift cost Usage (Compute, Memory & Volumes) | /api/cost-management/v1/reports/openshift/ | 
-|  Project_Tags_URL   | Part of the REST API URL for tags associated with OpenShift projects  | /api/cost-management/v1/tags/openshift/ |
-|  Default_Configs_URL   | REST API URL to get default user configurations | /api/cost-management/v1/account-settings/ |
+|  Tags_URL   | Part of the REST API URL for tags associated with OpenShift projects  | /api/cost-management/v1/tags/openshift/ |
+|  Default_Configs_URL   | Part of the REST API URL to get default user configurations | /api/cost-management/v1/account-settings/ |
+|  Opt_URL   | Part of the REST API URL for Optimizations  | /api/cost-management/v1/recommendations/openshift |
 |  API_Limit   | Default limit when paging is used for REST API calls | 10 |
 |  API_Offset   | Default offset value for the first API call when paging is used. Though the parameter always remains 0, the value is incremented in the function itself till all the data is extracted | 0 |
 
@@ -122,6 +123,12 @@ The Technical design specification documents the system architecture for the Mic
 |  OpenShift   |  Usage_Data_Clusters_Daily   | Cluster   | Usage data for Clusters extracted out of Usage_Data_Daily_Extract |  |
 |  OpenShift   |  Usage_Data_Nodes_Daily   | Node   | Usage data for Nodes extracted out of Usage_Data_Daily_Extract |  |
 |  OpenShift   |  Usage_Data_Tags_Daily   | Tag   | Usage data for Tags extracted out of Usage_Data_Daily_Extract |  |
+|  Optimizations   |  Recommendations_Extract   | Not Applicable   | Optimizatoins REST API call and expand meta data | [Optimizations API](https://console.redhat.com/api/cost-management/v1/recommendations/openshift?limit=100&offset=0&order_by=last_reported&order_how=desc) |
+|  Optimizations   |  Recommendations_Base   | Not Applicable   | List of clusters, associated entities like containers and current configuration |  |
+|  Optimizations   |  Recommendations_ST   | Not Applicable   | Short term recommendations/openshift |  |
+|  Optimizations   |  Recommendations_MT   | Not Applicable   | Medium term recommendations/openshift |  |
+|  Optimizations   |  Recommendations_LT   | Not Applicable   | Long term recommendations/openshift |  |
+
 
 ##### Other Queries
 
@@ -136,6 +143,7 @@ The Technical design specification documents the system architecture for the Mic
 |  OpenShift   |  OS Cost Cluster Projects   | OS Cost Cluster Projects   | Projects associated with each OpenShift cluster |
 |  OpenShift   |  OS Tag Keys   | OS Tag Keys   | OpenShift Tag keys |
 |  OpenShift   |  OS Daily Usage   | OS Daily Usage   | Daily OpenShift Usage for a combination of each group by and usage models |
+|  Optimizations   |  Recommendations   | Recommendations   | Optimizations with all recommendations merged |  |
 
 ### Power BI
 1. All Microsoft Excel files with the Cost Management data should be of file extension ".xlsx" and be placed in one directory or sub-directories under a root directory. The path of the root directory should be defined in the **Data Source Settings** of the Power BI Desktop (.pbix) file.
@@ -161,6 +169,7 @@ The Technical design specification documents the system architecture for the Mic
 |  OS Cost Cluster Projects   |  OS Cost Cluster Projects   | Yes   | Projects associated with each OpenShift cluster |
 |  OS Cost Project Tags   |  OS Cost Project Tags   | Yes   | Tags and keys associated with each OpenShift project |
 |  OS Daily Usage   |  OS Daily Usage   | Yes  | Daily OpenShift Usage for a combination of each group by and usage models |
+|  Optimizations   |  Optimizations   | Yes  | Recommendations OpenShift |
 
 ##### DAX Tables
 
@@ -178,3 +187,4 @@ The Technical design specification documents the system architecture for the Mic
 |  OpenShift Details   | All OpenShift Group Bys with associated Names and costs |
 |  Cost Overview   | Cluster and Tag/Keys associated with each Project; Projects associated with each Cluster; Usage (CPU, Memory & Volume) details; Running total of daily cost, usage details for selected and previous periods; |
 |  Cost Explorer  | Daily Costs table for each group by; Bar chart visualization of 5 leading costs for each group by  |
+|  Optimizations   |  OpenShift Optimizations |

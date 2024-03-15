@@ -107,3 +107,4 @@ The Cost Management console pages will map to the below Power BI report pages.
 |  OpenShift   | OpenShift Details | OpenShift Details |
 |  OpenShift   | Cost overview | Cost overview |
 |  OpenShift   | Historical data  | Cost overview  |
+|  Optimizations   | Optimizations  | Optimizations  |
