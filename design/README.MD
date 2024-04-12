@@ -38,15 +38,12 @@ The Technical design specification documents the system architecture for the Mic
 	1. Overview
 	2. OpenShift
 	3. Amazon Web Services
-	4. Google Cloud Platform
-	5. Microsoft Azure
-	6. Oracle Cloud Infrastructure
-	7. Cost Explorer
+	4. Cost Explorer
 
 2. The console user account used should have atleast one service account created. Service Accounts should have access to appropriate groups & roles to retrieve data from the APIs. Please refer to [document](https://access.redhat.com/documentation/en-us/cost_management_service/1-latest/html/limiting_access_to_cost_management_resources/index) for related groups & roles required.
 3. Service token based authentication should be used to access the REST APIs. A REST API [call](https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token) to retreive the service token should be executed prior to making a API call to get the cost data. The client credentials, available in the console, generated for the service account should be used as an authentication protocol.
 4. The token received should be used as an authentication protocol for the REST API call to extract cost related data. The time limit for token is **5 minutes**.
-5. Please refer to [document](https://source.redhat.com/groups/public/consoledot/consoledot_blog/hcc__service_accounts_with_rbac_support_as_an_alternative_to_basic_auth) on service account creation and RBAC.
+
 
 ### Microsoft Excel
 1. Microsoft Excel should be version 2016 or later in order to use Power Query. 
@@ -54,7 +51,7 @@ The Technical design specification documents the system architecture for the Mic
 3. Each Cost Management tab might need one more excel files to present the data. This is dependent on the number of REST APIs being called and the amount of data being extracted.
 4. The client id and client secret used for authentication will be stored in a csv file named **auth.csv**. This file will be loaded as one of the data sources in each of the excel files. The authentication provided in the file will be used as part of the REST API call to get the service token.
 5. Each Excel file will have a worksheet named "Date_Period" with Start and End Date fields. The dates entered in these fields will be used as a period for which the Power Query will request the data for from the REST APIs. The guidelines about the date values that need to be entered will be available in the Excel file template.
-6. Multiple Excel files can be generated with different date ranges as long as Cost Management REST APIs are able to return the date for the given period.
+6. Cost Management records data upto 90 days in the past. Multiple Excel files can be generated with different date ranges in the last 90 days.
 
 ![Excel Date_Period](./images/Excel_Date_Period.png)
 
@@ -90,6 +87,10 @@ The Technical design specification documents the system architecture for the Mic
 |  Costs_URL   | Part of the REST API URL for OpenShift costs  | /api/cost-management/v1/reports/openshift/costs/ |
 |  Usage_URL   | Part of the REST API URL for OpenShift cost Usage (Compute, Memory & Volumes) | /api/cost-management/v1/reports/openshift/ | 
 |  Tags_URL   | Part of the REST API URL for tags associated with OpenShift projects  | /api/cost-management/v1/tags/openshift/ |
+|  AWS_Costs_URL   | Part of the REST API URL for OpenShift costs  | /api/cost-management/v1/reports/aws/costs/ |
+|  AWS Tags_URL   | Part of the REST API URL for tags associated with AWS   | /api/cost-management/v1/tags/aws/ |
+|  AWS Organizations_URL   | Part of the REST API URL for Organizations associated with AWS   | /api/cost-management/v1/organizations/aws/ |
+|  AWS Category_URL   | Part of the REST API URL for tags associated with AWS   | /api/cost-management/v1/resource-types/aws-categories/?key_only=true |
 |  Default_Configs_URL   | Part of the REST API URL to get default user configurations | /api/cost-management/v1/account-settings/ |
 |  Opt_URL   | Part of the REST API URL for Optimizations  | /api/cost-management/v1/recommendations/openshift |
 |  API_Limit   | Default limit when paging is used for REST API calls | 10 |
@@ -103,8 +104,8 @@ The Technical design specification documents the system architecture for the Mic
 | Console Tab | Name  | Used for Group By  | Description | Sample API |
 |:-----| :---------| :---------| :---------|  :---------|
 |  Not Applicable   |  auth   | Not Applicable   | Client ID and Client Secret authentication  |  |
-|  OpenShift   |  Currency_Master   | Not Applicable   | Currency master data | [Currency API](https://console.redhat.com/api/cost-management/v1/currency/?filter%5Blimit%5D=15&limit=100&offset=0) |
-|  OpenShift   |  Default_Configurations   | Not Applicable   | Default user settings data | [Configurations API](https://console.redhat.com/api/cost-management/v1/account-settings/) |
+|  Not Applicable   |  Currency_Master   | Not Applicable   | Currency master data | [Currency API](https://console.redhat.com/api/cost-management/v1/currency/?filter%5Blimit%5D=15&limit=100&offset=0) |
+|  Not Applicable   |  Default_Configurations   | Not Applicable   | Default user settings data | [Configurations API](https://console.redhat.com/api/cost-management/v1/account-settings/) |
 |  OpenShift   |  Cost_Data_Project_Daily_Extract   | Project   | Projects REST API call and expand meta data | [OS Projects API](https://console.redhat.com/api/cost-management/v1/reports/openshift/costs/?currency=USD&filter[limit]=100&filter[offset]=0&filter[resolution]=daily&start_date=2024-01-01&end_date=2024-01-31&group_by[project]=*&order_by[cost]=desc) |
 |  OpenShift   |  Cost_Data_Master_Projects_Daily   | Project   | Distinct projects extracted out of Cost_Data_Project_Daily_Extract  |  |
 |  OpenShift   |  Cost_Data_Projects_Daily   | Project   | Projects and associated costs extracted out of Cost_Data_Projects_Daily_Dist_Cost |  |
@@ -123,6 +124,24 @@ The Technical design specification documents the system architecture for the Mic
 |  OpenShift   |  Usage_Data_Clusters_Daily   | Cluster   | Usage data for Clusters extracted out of Usage_Data_Daily_Extract |  |
 |  OpenShift   |  Usage_Data_Nodes_Daily   | Node   | Usage data for Nodes extracted out of Usage_Data_Daily_Extract |  |
 |  OpenShift   |  Usage_Data_Tags_Daily   | Tag   | Usage data for Tags extracted out of Usage_Data_Daily_Extract |  |
+|  AWS         |  AWS_Cost_Accounts_Daily_Extract   |  Accounts    |  AWS Accounts REST API call and expand meta data   |  [AWS Accounts  API](https://console.redhat.com/api/cost-management/v1/reports/aws/costs/?currency=USD&filter[limit]=100&filter[offset]=0&filter[resolution]=daily&start_date=2024-01-01&end_date=2024-01-31&group_by[account]=*&order_by[cost]=desc) |
+|  AWS         |  AWS_Costs_Master_Accounts_Daily   |  Accounts    |  AWS Distinct Accounts  extracted out of AWS_Cost_Accounts_Daily_Extract   |     |
+|  AWS         |  AWS_Costs_Accounts_Daily   |  Accounts    |  Accounts and associated costs extracted out of AWS_Costs_Master_Accounts_Daily   |     |
+|  AWS         |  AWS_Cost_Services_Daily_Extract   |  Services    |  AWS Services REST API call and expand meta data   |  [AWS Services  API](https://console.redhat.com/api/cost-management/v1/reports/aws/costs/?currency=USD&filter[limit]=100&filter[offset]=0&filter[resolution]=daily&start_date=2024-01-01&end_date=2024-01-31&group_by[service]=*&order_by[cost]=desc) |
+|  AWS         |  AWS_Costs_Master_Services_Daily   |  Services    |  AWS Distinct Services  extracted out of AWS_Cost_Services_Daily_Extract   |     |
+|  AWS         |  AWS_Costs_Services_Daily   |  Services    |  Services and associated costs extracted out of AWS_Costs_Master_Services_Daily   |     |
+|  AWS         |  AWS_Cost_Regions_Daily_Extract   |  Regions    |  AWS Regions REST API call and expand meta data   |  [AWS Regions  API](https://console.redhat.com/api/cost-management/v1/reports/aws/costs/?currency=USD&filter[limit]=100&filter[offset]=0&filter[resolution]=daily&start_date=2024-01-01&end_date=2024-01-31&group_by[region]=*&order_by[cost]=desc) |
+|  AWS         |  AWS_Cost_Master_Regions_Daily   |  Regions    |  AWS Distinct Regions  extracted out of AWS_Cost_Regions_Daily_Extract   |     |
+|  AWS         |  AWS_Cost_Regions_Daily   |  Regions    |  Regions and associated costs extracted out of AWS_Cost_Master_Regions_Daily   |     |
+|  AWS         |  AWS_Cost_Tags_Daily_Extract   |  Tags    |  AWS Tags REST API call and expand meta data   |  [AWS Tags  API](https://console.redhat.com/api/cost-management/v1/reports/aws/costs/?currency=USD&filter[limit]=100&filter[offset]=0&filter[resolution]=daily&start_date=2024-01-01&end_date=2024-01-31&group_by[tag:api]=*&order_by[cost]=desc) |
+|  AWS         |  AWS_Cost_Master_Tags_Daily   |  Tags    |  AWS Distinct Tags  extracted out of AWS_Cost_Tags_Daily_Extract   |     |
+|  AWS         |  AWS_Cost_Tags_Daily   |  Tags    |  Tags and associated costs extracted out of AWS_Cost_Master_Tags_Daily   |     |
+|  AWS         |  AWS_Cost_Categories_Daily_Extract   |  Categories    |  AWS Categories REST API call and expand meta data   |  [AWS Categories  API](https://console.redhat.com/api/cost-management/v1/reports/aws/costs/?currency=USD&filter[limit]=100&filter[offset]=0&filter[resolution]=daily&start_date=2024-01-01&end_date=2024-01-31&group_by[aws_category:CostCenter]=*&order_by[cost]=desc) |
+|  AWS         |  AWS_Cost_Master_Categories_Daily   |  Categories    |  AWS Distinct Categories extracted out of AWS_Cost_Categories_Daily_Extract   |     |
+|  AWS         |  AWS_Cost_Categories_Daily   |  Categories    |  Categories and associated costs extracted out of AWS_Cost_Master_Categories_Daily   |     |
+|  AWS         |  AWS_Cost_Orgs_Daily_Extract   |  Orgs    |  AWS Orgs REST API call and expand meta data   |  [AWS Orgs  API](https://console.redhat.com/api/cost-management/v1/reports/aws/costs/?currency=USD&filter[limit]=100&filter[offset]=0&filter[resolution]=daily&start_date=2024-01-01&end_date=2024-01-31&group_by[org_unit_id]=r-f22a&order_by[cost]=desc) |
+|  AWS         |  AWS_Cost_Master_Orgs_Daily   |  Orgs    |  AWS Distinct Orgs  extracted out of AWS_Cost_Orgs_Daily_Extract   |     |
+|  AWS         |  AWS_Cost_Orgs_Daily   |  Orgs    |  Orgs and associated costs extracted out of AWS_Cost_Master_Orgs_Daily   |     |
 |  Optimizations   |  Recommendations_Extract   | Not Applicable   | Optimizatoins REST API call and expand meta data | [Optimizations API](https://console.redhat.com/api/cost-management/v1/recommendations/openshift?limit=100&offset=0&order_by=last_reported&order_how=desc) |
 |  Optimizations   |  Recommendations_Base   | Not Applicable   | List of clusters, associated entities like containers and current configuration |  |
 |  Optimizations   |  Recommendations_ST   | Not Applicable   | Short term recommendations/openshift |  |
@@ -134,8 +153,8 @@ The Technical design specification documents the system architecture for the Mic
 
 | Console Tab | Name  | Worksheet  | Description |
 |:-----| :---------| :---------| :---------|  
-|  OpenShift   |  Data_Period   | Data_Period   | Date range with in which the data needs to be extracted |
-|  OpenShift   |  Default Master Settings   | Default Master Settings   | Default user currency description and cost types |
+|  Not Applicable   |  Data_Period   | Data_Period   | Date range with in which the data needs to be extracted |
+|  Not Applicable   |  Default Master Settings   | Default Master Settings   | Default user currency description and cost types |
 |  OpenShift   |  OpenShift Group Bys   | OpenShift Group Bys   | Hardcoded table with different group by models |
 |  OpenShift   |  Project Overhead Cost Types  | Project Overhead Cost Types   | Hardcoded tables for overhead cost types (distributed vs non-distributed) |
 |  OpenShift   |  OS Costs Daily   | OS Costs Daily   | Daily OpenShift costs for all group by models |
@@ -143,6 +162,15 @@ The Technical design specification documents the system architecture for the Mic
 |  OpenShift   |  OS Cost Cluster Projects   | OS Cost Cluster Projects   | Projects associated with each OpenShift cluster |
 |  OpenShift   |  OS Tag Keys   | OS Tag Keys   | OpenShift Tag keys |
 |  OpenShift   |  OS Daily Usage   | OS Daily Usage   | Daily OpenShift Usage for a combination of each group by and usage models |
+|  AWS         |  AWS Group Bys   | AWS Group Bys   | Hardcoded table with different group by models |
+|  AWS		   |  AWS Tag Keys   | AWS Tag Keys   | AWS Tag keys |
+|  AWS		   |  AWS Cost Categories   | AWS Cost Categories   | AWS Cost Categories |
+|  AWS		   |  AWS Org Units   | AWS Org Units   | AWS Org Units |
+|  AWS 		   |  AWS Daily Costs  | AWS Daily Costs  | Daily AWS costs for all group by models |
+|  AWS 		   |  AWS Cost Account Tags  | AWS Cost Account Tags  | Tags and keys associated with each AWS Account |
+|  AWS 		   |  AWS Group By Account  | AWS Group By Account  | AWS all group by cost grouped based on Accounts |
+|  AWS 		   |  AWS Group By Service  | AWS Group By Service  | AWS all group by cost grouped based on Services |
+|  AWS 		   |  AWS Group By Region  | AWS Group By Region  | AWS all group by cost grouped based on Regions |
 |  Optimizations   |  Recommendations   | Recommendations   | Optimizations with all recommendations merged |  |
 
 ### Power BI
@@ -169,7 +197,17 @@ The Technical design specification documents the system architecture for the Mic
 |  OS Cost Cluster Projects   |  OS Cost Cluster Projects   | Yes   | Projects associated with each OpenShift cluster |
 |  OS Cost Project Tags   |  OS Cost Project Tags   | Yes   | Tags and keys associated with each OpenShift project |
 |  OS Daily Usage   |  OS Daily Usage   | Yes  | Daily OpenShift Usage for a combination of each group by and usage models |
+|  AWS Groups Tags   |  | Yes | Table generated by merging AWS Group Bys & AWS Tags to list all group bys and keys associated with Cost Categories, Organizations & Tags |
+|  AWS Group Bys   |  AWS Group Bys   | No   | Hardcoded table with different group by models. This table will be merged with AWS Tags into a new query AWS Groups Tags |
+|  AWS Dummy Table   |     |  No  | Hardcoded record for aws_category & org_unit_id with blank key. The record will be usefull as part of the filter mechanism when listing Cost Categories & Organizations in AWS details page |
+|  AWS Tags   |  AWS Tag Keys   | No   | AWS Tag keys |
+|  AWS Cost Categories   |  AWS Cost Categories   | No   | AWS Cost Categories |
+|  AWS Org Units   |  AWS Org Units   | No   | AWS Org Units |
+|  AWS Appended Keys   |     | No   | Appended AWS Tag keys, Cost Categories & Org Units |
+|  AWS Daily Costs   |  AWS Costs Daily   | Yes  | Daily AWS costs for all group by models |
 |  Optimizations   |  Optimizations   | Yes  | Recommendations OpenShift |
+
+
 
 ##### DAX Tables
 
@@ -179,6 +217,8 @@ The Technical design specification documents the system architecture for the Mic
 |  MonthTable   | Distinct Month & Year combinations from DateTable |
 |  OS Monthly Costs  | Monthly aggregated columns from  OS Daily Costs |
 |  OS Monthly Usage  | Monthly aggregated columns from  OS Daily Usage |
+|  AWS Monthly Costs  | Monthly aggregated columns from  AWS Daily Costs |
+
 
 ##### Visualization Pages
 
@@ -187,4 +227,5 @@ The Technical design specification documents the system architecture for the Mic
 |  OpenShift Details   | All OpenShift Group Bys with associated Names and costs |
 |  Cost Overview   | Cluster and Tag/Keys associated with each Project; Projects associated with each Cluster; Usage (CPU, Memory & Volume) details; Running total of daily cost, usage details for selected and previous periods; |
 |  Cost Explorer  | Daily Costs table for each group by; Bar chart visualization of 5 leading costs for each group by  |
+|  Amazon Web Services | All AWS Group Bys with associated Names and costs |
 |  Optimizations   |  OpenShift Optimizations |
