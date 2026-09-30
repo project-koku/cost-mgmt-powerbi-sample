@@ -10,9 +10,9 @@ A sample that loads Red Hat Cost Management data into `PowerBI/CostManagement.pb
 
 Follow `docs/superpowers/specs/2026-09-30-powershell-csv-loader-design.md` before changing how data is fetched or loaded.
 
-The intended loader is Windows PowerShell 5.1. It downloads JSON from the Cost Management API and writes CSV. The Power BI report imports those CSV files. The Excel workbooks are removed in that change; the new report does not read them. Do not add a second loader beside the script.
+The intended loader is Windows PowerShell 5.1. It downloads JSON from the Cost Management API and writes CSV. The Power BI report imports those CSV files. The Excel workbooks are gone. Do not add a second loader beside the script.
 
-`-ApiBaseUrl` and `-TokenUrl` default to console.redhat.com and the Red Hat SSO token endpoint. A self-managed Cost Management passes its own API host and Keycloak token URL.
+`-ApiBaseUrl` and `-TokenUrl` are the on-prem switches. They default to console.redhat.com and the Red Hat SSO token endpoint. A self-managed Cost Management passes its own API host and Keycloak token URL.
 
 `-TestProxy` reports the system proxy for the token URL and the API host. It must not read `auth.csv`. `-Test` runs that check before it sends the client secret. A configured proxy is used. The script must not drop it and connect directly. Neither switch prints the client secret, the access token, or proxy credentials, and neither writes CSV files.
 
