@@ -14,7 +14,7 @@ The intended loader is Windows PowerShell 5.1. It downloads JSON from the Cost M
 
 `-ApiBaseUrl` and `-TokenUrl` default to console.redhat.com and the Red Hat SSO token endpoint. A self-managed Cost Management passes its own API host and Keycloak token URL.
 
-`-Test` checks the service account before an export. It must report `credentials: rejected`, `permissions: denied`, or `connection: failed` without printing the client secret or the access token, and it must not write CSV files.
+`-TestProxy` reports the system proxy for the token URL and the API host. It must not read `auth.csv`. `-Test` runs that check before it sends the client secret. A configured proxy is used. The script must not drop it and connect directly. Neither switch prints the client secret, the access token, or proxy credentials, and neither writes CSV files.
 
 Cost Management emits data. This repository owns the report template. Do not add a database, and do not generate `.pbix` files from Cost Management.
 

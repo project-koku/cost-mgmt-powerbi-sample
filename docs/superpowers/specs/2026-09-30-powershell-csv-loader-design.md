@@ -82,8 +82,9 @@ Parameters:
 
 | Parameter | Meaning |
 | --- | --- |
-| `-Help` | Print usage and exit 0. No auth file is read and no network call is made. `-Help` wins when `-Test` is also passed. |
-| `-Test` | Check the service account, then exit. Reads `auth.csv`. Does not write CSV files. |
+| `-Help` | Print usage and exit 0. No auth file is read and no network call is made. `-Help` wins when `-Test` or `-TestProxy` is also passed. |
+| `-TestProxy` | Report the proxy choice for `-TokenUrl` and `-ApiBaseUrl`, then exit. Does not read `auth.csv` and does not send the client secret. |
+| `-Test` | Check the proxy, then the service account, then exit. Reads `auth.csv` only after the proxy check succeeds. Does not write CSV files. |
 | `-StartDate` | First day to request, `yyyy-MM-dd`. Default: 30 days before today, local time. |
 | `-EndDate` | Last day to request, `yyyy-MM-dd`. Default: yesterday, local time. |
 | `-AuthFile` | Path to `auth.csv`. Default: `data/auth.csv` beside the repo root, resolved from the script location. |
@@ -100,20 +101,32 @@ The script resolves the repo root from its own path. It does not embed `C:\git\.
 - The date format `yyyy-MM-dd`, and the defaults for `-StartDate` and `-EndDate`.
 - Every dataset id accepted by `-Dataset`, with the CSV file that id writes.
 - The defaults for `-ApiBaseUrl`, `-TokenUrl`, and `-Scope`.
-- Examples: `-Test`, a full run, one dataset, and a self-managed instance that sets `-TokenUrl` and `-ApiBaseUrl`.
+- Examples: `-TestProxy`, `-Test`, a full run, one dataset, and a self-managed instance that sets `-TokenUrl` and `-ApiBaseUrl`.
 
 The same text is stored as PowerShell comment-based help, so `Get-Help .\scripts\Export-CostManagement.ps1 -Full` shows it too. `-Help` is the path documented for FinOps users.
 
-`-Test` requests a token, then calls `GET {ApiBaseUrl}/api/cost-management/v1/account-settings/`. It prints one of these first lines and does not print the client secret or the access token:
+`-TestProxy` resolves the Windows system proxy for `-TokenUrl` and for `-ApiBaseUrl`, tries each URL through that choice, and prints two lines:
 
-| Result | Exit | First line |
+| Situation | Line |
+| --- | --- |
+| No proxy is configured for that URL | `proxy token: direct` or `proxy api: direct` |
+| A proxy exists and Windows bypasses it for that URL | `proxy token: bypassed` or `proxy api: bypassed` |
+| A proxy is used | `proxy token: http://proxy.example.com:8080` (the proxy's own scheme, host, and port) |
+| A proxy was selected and no HTTP response came back | `proxy token: failed http://proxy.example.com:8080` |
+| Proxy settings could not be read | `proxy token: failed` |
+
+The token line is first, then the API line. Any HTTP status counts as a response, including 401. Exit 0 when neither line starts with `proxy token: failed` or `proxy api: failed`. Exit 1 otherwise. The script does not read `auth.csv` and does not send the client secret. A proxy URL in the output has no username and no password.
+
+`-Test` prints those same two lines first. If either line starts with `proxy token: failed` or `proxy api: failed`, it exits 1 and does not read `auth.csv`. Otherwise it requests a token, then calls `GET {ApiBaseUrl}/api/cost-management/v1/account-settings/`. It does not print the client secret or the access token. The credential line is one of:
+
+| Result | Exit | Credential line |
 | --- | --- | --- |
 | Token received and account settings returned HTTP 200 | 0 | `credentials: accepted` |
 | Token endpoint returned HTTP 400 or 401 | 1 | `credentials: rejected` |
 | Token succeeded and the API returned HTTP 401 or 403 | 1 | `permissions: denied` |
 | No HTTP response (DNS, TLS, or connection failure) | 1 | `connection: failed` |
 
-`credentials: rejected` means the client id, client secret, token URL, or scope was not accepted. `permissions: denied` means the service account authenticated and Cost Management refused the call. Any other HTTP status from account settings exits 1 with the first line `api: failed` and the status code.
+`credentials: rejected` means the client id, client secret, token URL, or scope was not accepted. `permissions: denied` means the service account authenticated and Cost Management refused the call. Any other HTTP status from account settings exits 1 with the credential line `api: failed` and the status code.
 
 Dataset ids for this implementation are the CSV file names without `.csv`: `Data_Period`, `Default_Master_Settings`, `OS_Costs_Daily`, `OS_Cost_Project_Tags`, `OS_Cost_Cluster_Projects`, `OS_Tag_Keys`, `OS_Daily_Usage`, `AWS_Daily_Costs`, `AWS_Tag_Keys`, `AWS_Cost_Categories`, `AWS_Org_Units`, and `Recommendations`. `Data_Period` is written on every run from `-StartDate` and `-EndDate`, including a run that names one other dataset.
 
@@ -136,6 +149,8 @@ Committed CSV files for worksheets that do not come from the API:
 
 Header rows match the current worksheets. The blank tag, cost-category, and org-unit rows stay in the report's Power Query, where they already live.
 
+`data/static/Project_Overhead_Cost_Types.csv` keeps the workbook text for the non-distributed row. The description is exactly `Don't distribute  overhead costs`, with two spaces between `distribute` and `overhead`. The unit test reads that file and requires those two spaces. One space fails the test.
+
 ### `schema/`
 
 One text file per exported CSV. Each file is the header row, comma-separated. Implementation reads those headers from the current workbooks first, commits `schema/`, and then deletes the workbooks. After that, `schema/` is the column contract. Tests compare script output to these files.
@@ -153,6 +168,18 @@ The script requests a token with `grant_type=client_credentials` and `-Scope` fr
 It refreshes the token when the token is 4 minutes old, and again when a call returns HTTP 401. One 401 retry is allowed per request. A second 401 fails that dataset.
 
 The script never writes the client secret or the access token to the log or to a CSV.
+
+## Proxy
+
+Every token request and every API request uses the signed-in user's Windows system proxy (`GetSystemWebProxy`) for that URL.
+
+- No proxy for the URL: connect directly.
+- Windows marks the URL as bypassed: connect directly and report `bypassed`. The script reports that choice. It does not hide it.
+- A proxy is returned: send the request through it and attach the user's default network credentials, so an authenticated proxy can succeed. The proxy address stored in the log or in `-TestProxy` output has no username and no password.
+- The proxy was selected and the call produces no HTTP response: stop. Do not try the same URL directly. A direct fallback would hide a proxy the operator expected to use.
+- There is no parameter that disables the proxy. The operator changes that in Windows Internet Settings.
+
+Before the first HTTPS call, the script enables TLS 1.2. Windows PowerShell 5.1 does not always negotiate it, and a missing TLS 1.2 handshake would otherwise look like `connection: failed`.
 
 ## API calls and paging
 
@@ -185,6 +212,8 @@ Nested cost objects are expanded to the same dotted column names the workbooks p
 List fields, including `source_uuid` and `clusters`, are joined with a comma. A null list, a null item inside a list, or a missing field becomes an empty CSV field. The script does not call a conversion that rejects null.
 
 Numbers stay numbers in the CSV. Dates are `yyyy-MM-dd`.
+
+`OS_Cost_Project_Tags` writes `Filter Month` from `-EndDate`: the year, a hyphen, and the month number with no leading zero. For 30 September 2026 the field is `2026-9`. `2026-09` is wrong. The unit test uses end date `2026-09-30` and requires the exact characters `2026-9`.
 
 ## CSV outputs
 
@@ -250,7 +279,7 @@ There is no legacy Excel section.
 
 - `auth.csv` stays untracked.
 - `data/export/` is gitignored, including CSV files, the partial directory, and `export.log`. Exported files contain customer cost data.
-- The log redacts credentials.
+- The log redacts credentials, including a username or password embedded in a proxy URL.
 - Each run sends the client secret only to `-TokenUrl`, and data requests only to `-ApiBaseUrl`. SaaS defaults are `sso.redhat.com` and `console.redhat.com`. A self-managed Cost Management uses the operator's Keycloak URL and their own API host. The script does not send credentials to any other host.
 
 ## Repository layout
@@ -286,7 +315,11 @@ Exit code 0 means every assertion passed. The tests dot-source `scripts/CostMana
 
 Assertions:
 
-- `-Help` lists every dataset id and the date format `yyyy-MM-dd`, mentions `-Test`, and it does not read `auth.csv`.
+- `-Help` lists every dataset id and the date format `yyyy-MM-dd`, mentions `-Test` and `-TestProxy`, and it does not read `auth.csv`.
+- `-TestProxy` with no system proxy prints `proxy token: direct` and `proxy api: direct`, does not read `auth.csv`, and exits 0.
+- `-TestProxy` with a recorded proxy `http://user:secret@proxy.example.com:8080` prints `http://proxy.example.com:8080` and does not print `user:secret`.
+- `-TestProxy` with that proxy and a failed connection prints `proxy token: failed http://proxy.example.com:8080`, exits 1, and does not send the client secret.
+- A recorded bypass prints `proxy token: bypassed`.
 - `-Test` with a recorded token HTTP 401 prints `credentials: rejected`, writes no CSV, and exits 1.
 - `-Test` with a recorded token HTTP 200 and account-settings HTTP 403 prints `permissions: denied` and exits 1.
 - `-Test` with both calls HTTP 200 prints `credentials: accepted` and exits 0.
@@ -296,6 +329,8 @@ Assertions:
 - A recorded HTTP 401 refreshes the token once and retries. The retried token request uses the configured `-TokenUrl`.
 - A window that fails once and then succeeds on each half is concatenated in date order with one header row.
 - A run with a non-default `-ApiBaseUrl` requests `https://cost.example.com/api/cost-management/v1/...` and sends the token request only to the configured `-TokenUrl`.
+- `OS_Cost_Project_Tags` for end date `2026-09-30` writes `Filter Month` as `2026-9`.
+- `data/static/Project_Overhead_Cost_Types.csv` contains `Don't distribute  overhead costs` with two spaces.
 
 A live run against a service account is a manual check: currency, account settings, and one OpenShift project day, then a full export, then refresh `CostManagement.pbix` and confirm the existing pages show rows. That live check is not part of the unit tests. SaaS and a self-managed instance are both valid targets for it.
 
@@ -303,15 +338,17 @@ A live run against a service account is a manual check: currency, account settin
 
 1. Copy `auth.csv.sample` to `data/auth.csv` and set the service-account client id and secret.
 2. Run `powershell.exe -File scripts/Export-CostManagement.ps1 -Help` to see dataset ids, the `yyyy-MM-dd` date format, and the URL parameters.
-3. Run `powershell.exe -File scripts/Export-CostManagement.ps1 -Test`. On a self-managed instance, add `-TokenUrl` and `-ApiBaseUrl`. `credentials: accepted` means continue. `credentials: rejected` means fix the client id, client secret, token URL, or scope. `permissions: denied` means the service account needs a Cost Management role. `connection: failed` means the host did not answer.
-4. Run `powershell.exe -File scripts/Export-CostManagement.ps1`. On a self-managed instance, add the same `-TokenUrl` and `-ApiBaseUrl`.
-5. Open `PowerBI/CostManagement.pbix` and refresh.
-6. If a dataset fails, read `data/export/export.log` for the dataset, the date window, and the HTTP status. Re-run with `-Dataset` and a shorter `-StartDate`/`-EndDate` while the log still shows a failure.
+3. Run `powershell.exe -File scripts/Export-CostManagement.ps1 -TestProxy`. On a self-managed instance, add `-TokenUrl` and `-ApiBaseUrl`. `direct` means no proxy is configured. `bypassed` means Windows is skipping the proxy for that host. A proxy URL means the script will use it. `failed` means stop and fix the proxy. The script will not switch to a direct connection.
+4. Run `powershell.exe -File scripts/Export-CostManagement.ps1 -Test` with the same URL parameters. `credentials: accepted` means continue. `credentials: rejected` means fix the client id, client secret, token URL, or scope. `permissions: denied` means the service account needs a Cost Management role. `connection: failed` means the host did not answer after the proxy check succeeded.
+5. Run `powershell.exe -File scripts/Export-CostManagement.ps1`. On a self-managed instance, add the same `-TokenUrl` and `-ApiBaseUrl`.
+6. Open `PowerBI/CostManagement.pbix` and refresh.
+7. If a dataset fails, read `data/export/export.log` for the dataset, the date window, and the HTTP status. Re-run with `-Dataset` and a shorter `-StartDate`/`-EndDate` while the log still shows a failure.
 
 ## Success criteria
 
 - `-Help` lists every dataset id and `yyyy-MM-dd`, and makes no network call.
-- `-Test` distinguishes rejected credentials, denied permissions, and a failed connection, and it writes no CSV.
+- `-TestProxy` shows `direct`, `bypassed`, the proxy host, or `failed`, and it does not read `auth.csv`.
+- `-Test` distinguishes rejected credentials, denied permissions, and a failed connection, and it writes no CSV. A failed proxy check exits before the client secret is sent.
 - `scripts/Export-CostManagement.Tests.ps1` exits 0.
 - A fixture containing null list items produces a CSV and does not raise a type-conversion error.
 - A failed API page is an HTTP status in the log, and the previous CSV for that dataset remains in place.

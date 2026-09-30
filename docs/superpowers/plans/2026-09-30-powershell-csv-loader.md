@@ -12,8 +12,10 @@
 
 - Runtime is Windows PowerShell 5.1. Do not require PowerShell 7, Pester, Excel, or SQLite.
 - Download JSON. Write UTF-8 CSV with a byte order mark. A null list, a null list item, or a missing field becomes an empty CSV field.
-- `-Help` lists every in-scope dataset id, `yyyy-MM-dd`, and `-Test`. It reads no auth file and makes no network call. Exit 0. `-Help` wins when `-Test` is also passed.
-- `-Test` reads `auth.csv`, requests a token, then `GET {ApiBaseUrl}/api/cost-management/v1/account-settings/`. It writes no CSV. First line is `credentials: accepted` (exit 0), `credentials: rejected`, `permissions: denied`, `connection: failed`, or `api: failed` (exit 1). Never print the client secret or the access token.
+- `-Help` lists every in-scope dataset id, `yyyy-MM-dd`, `-Test`, and `-TestProxy`. It reads no auth file and makes no network call. Exit 0. `-Help` wins when `-Test` or `-TestProxy` is also passed.
+- `-TestProxy` prints `proxy token:` and `proxy api:` and does not read `auth.csv`. Lines are `direct`, `bypassed`, `scheme://host:port` with no userinfo, or `failed`. Exit 1 when either line starts with `proxy token: failed` or `proxy api: failed`.
+- `-Test` prints those proxy lines first. A failed proxy check exits 1 without reading `auth.csv`. Otherwise it reads `auth.csv`, requests a token, then `GET {ApiBaseUrl}/api/cost-management/v1/account-settings/`. It writes no CSV. The credential line is `credentials: accepted` (exit 0), `credentials: rejected`, `permissions: denied`, `connection: failed`, or `api: failed` (exit 1). Never print the client secret, the access token, or proxy credentials.
+- Requests use the Windows system proxy for that URL. A bypass is reported as `bypassed` and connects directly. A selected proxy that fails is not retried as a direct connection. Enable TLS 1.2 before the first HTTPS call.
 - Date parameters use `yyyy-MM-dd`. Default `-StartDate` is 30 days before today, local time. Default `-EndDate` is yesterday, local time.
 - `-ApiBaseUrl` defaults to `https://console.redhat.com`. `-TokenUrl` defaults to `https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token`. `-Scope` defaults to `api.console`.
 - The client secret is sent only to `-TokenUrl`. Data requests go only to `-ApiBaseUrl`. Never write the secret or the access token to the log or a CSV.
@@ -94,6 +96,7 @@ Assert-True 'help shows saas api default' ($help -match 'https://console.redhat.
 Assert-True 'help shows token default' ($help -match 'openid-connect/token')
 Assert-True 'help shows on-prem example' ($help -match '-TokenUrl' -and $help -match '-ApiBaseUrl')
 Assert-True 'help mentions Test' ($help -match '-Test')
+Assert-True 'help mentions TestProxy' ($help -match '-TestProxy')
 
 $entry = Join-Path $PSScriptRoot 'Export-CostManagement.ps1'
 $out = & powershell.exe -NoProfile -File $entry -Help
@@ -113,7 +116,7 @@ Expected: a parse or command-not-found error because `Get-CostManagementHelpText
 
 - [ ] **Step 3: Implement help**
 
-Create `scripts/CostManagementExport.ps1` with `Get-CostManagementDatasetIds` and `Get-CostManagementHelpText`. The help string must include `yyyy-MM-dd`, every dataset id, both default URLs, `-Scope` default `api.console`, and three examples: a full run, `-Dataset OS_Costs_Daily`, and a self-managed run that sets `-TokenUrl` and `-ApiBaseUrl`.
+Create `scripts/CostManagementExport.ps1` with `Get-CostManagementDatasetIds` and `Get-CostManagementHelpText`. The help string must include `yyyy-MM-dd`, every dataset id, both default URLs, `-Scope` default `api.console`, `-TestProxy`, and three examples: a full run, `-Dataset OS_Costs_Daily`, and a self-managed run that sets `-TokenUrl` and `-ApiBaseUrl`.
 
 Create `scripts/Export-CostManagement.ps1` with comment-based help (`.SYNOPSIS`, `.PARAMETER`, `.EXAMPLE`) and:
 
@@ -122,6 +125,7 @@ Create `scripts/Export-CostManagement.ps1` with comment-based help (`.SYNOPSIS`,
 [CmdletBinding()]
 param(
     [switch]$Help,
+    [switch]$TestProxy,
     [string]$StartDate,
     [string]$EndDate,
     [string]$AuthFile,
@@ -299,7 +303,7 @@ Expected: FAIL because `Test-CostManagementCredentials` does not exist.
 
 - [ ] **Step 3: Implement -Test**
 
-`Test-CostManagementCredentials` calls the token URL, then `GET` `$ApiBaseUrl + '/api/cost-management/v1/account-settings/'` with `Authorization: Bearer <token>`. Map statuses to the four first lines in the spec. The entry script handles `-Test` only when `-Help` is absent, after the functions are loaded, and before any export directory is created.
+`Test-CostManagementCredentials` calls the token URL, then `GET` `$ApiBaseUrl + '/api/cost-management/v1/account-settings/'` with `Authorization: Bearer <token>`. Map statuses to the credential lines in the spec. The entry script handles `-Test` only when `-Help` is absent, after the functions are loaded, and before any export directory is created. Task 3c adds the proxy lines in front of this result.
 
 - [ ] **Step 4: Run the test and confirm it passes**
 
@@ -316,6 +320,66 @@ With the tests from this task still passing, simplify names and remove duplicati
 ```powershell
 git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.ps1 scripts/Export-CostManagement.Tests.ps1
 git commit -m "Test Cost Management credentials before exporting."
+```
+
+---
+
+### Task 3c: System proxy
+
+**Files:**
+- Modify: `scripts/CostManagementExport.ps1`
+- Modify: `scripts/Export-CostManagement.ps1`
+- Modify: `scripts/Export-CostManagement.Tests.ps1`
+
+**Interfaces:**
+- Consumes: nothing from the network. Tests pass `-GetProxy` and `-Connect`.
+- Produces:
+  - `Get-CostManagementProxyDecision -Uri [uri] -GetProxy` returns `Choice` (`direct`, `bypassed`, `proxy`, or `failed`) and `ProxyUri` with userinfo removed.
+  - `Test-CostManagementProxy -TokenUrl -ApiBaseUrl -GetProxy -Connect` returns `ExitCode` and `Message`. `Message` is two lines, `proxy token:` then `proxy api:`.
+  - `Invoke-CostManagementWebRequest` applies that decision and enables TLS 1.2. Export code in Task 7 calls it.
+  - Entry `-TestProxy` prints `Message` and exits with `ExitCode`. It does not read `auth.csv`.
+  - `Invoke-CostManagementTest` parameters `TokenUrl`, `ApiBaseUrl`, `GetProxy`, `Connect`, `ReadAuth`. It runs the proxy check first. When the proxy check fails, it does not call `ReadAuth`.
+  - Entry `-Test` calls `Invoke-CostManagementTest`. When the proxy check fails, it prints the proxy message and exits 1 without reading `auth.csv`.
+
+- [ ] **Step 1: Write the failing test**
+
+Use a separate fake for each case.
+
+No proxy: `-GetProxy` returns no proxy. Assert `Message` is `proxy token: direct` then `proxy api: direct`, and `ExitCode` is 0.
+
+Bypass: `-GetProxy` reports the token URL bypassed. Assert the token line is `proxy token: bypassed`.
+
+Proxy with userinfo: `-GetProxy` returns `http://user:secret@proxy.example.com:8080` and `-Connect` returns an HTTP status. Assert `Message` contains `http://proxy.example.com:8080` and does not contain `user:secret`.
+
+Proxy failure: the same proxy, and `-Connect` throws. Assert the token line is `proxy token: failed http://proxy.example.com:8080` and `ExitCode` is 1. Call the entry helper that runs the proxy check before reading auth, and pass a `-ReadAuth` scriptblock. Assert that scriptblock is not called.
+
+`-Help -TestProxy` exits 0. The unit tests do not run a live `-TestProxy`, because that would use the machine proxy and the network.
+
+- [ ] **Step 2: Run the test and confirm it fails**
+
+Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
+
+Expected: FAIL because `Test-CostManagementProxy` does not exist.
+
+- [ ] **Step 3: Implement the proxy check**
+
+`GetSystemWebProxy` is the production `-GetProxy`. `IsBypassed` selects `bypassed`. A returned proxy selects `proxy` and the request uses `DefaultNetworkCredentials`. A throw from proxy lookup or from `-Connect` selects `failed`. Do not connect directly after `failed`. Strip userinfo before printing or logging the proxy URI. `-Help` still exits before this code.
+
+- [ ] **Step 4: Run the test and confirm it passes**
+
+Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
+
+Expected: `ALL PASS`.
+
+- [ ] **Step 5: Refactor**
+
+With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
+
+- [ ] **Step 6: Commit**
+
+```powershell
+git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.ps1 scripts/Export-CostManagement.Tests.ps1
+git commit -m "Report the system proxy before sending Cost Management credentials."
 ```
 
 ---
@@ -391,7 +455,11 @@ $header = Get-CostManagementSchemaHeader 'OS_Costs_Daily'
 Assert-True 'os costs has source_uuid' ($header -contains 'values.source_uuid')
 Assert-True 'os costs has clusters' ($header -contains 'values.clusters')
 Assert-True 'static group by file exists' (Test-Path (Join-Path (Get-CostManagementRepoRoot) 'data/static/OpenShift_Group_Bys.csv'))
+$overhead = Get-Content -Raw (Join-Path (Get-CostManagementRepoRoot) 'data/static/Project_Overhead_Cost_Types.csv')
+Assert-True 'overhead keeps two spaces' ($overhead.Contains("Don't distribute  overhead costs"))
 ```
+
+The two spaces are between `distribute` and `overhead`. One space fails this assertion.
 
 - [ ] **Step 2: Run the test and confirm it fails**
 
@@ -542,7 +610,7 @@ Dataset behavior:
 - `Default_Master_Settings`: `GET /api/cost-management/v1/currency/` and `GET /api/cost-management/v1/account-settings/`. Join on currency code.
 - `OS_Costs_Daily`: for group codes `project`, `cluster`, `node`, and each key from `GET /api/cost-management/v1/tags/openshift/`, call `/api/cost-management/v1/reports/openshift/costs/` with `currency`, `filter[resolution]=daily`, `start_date`, `end_date`, `filter[limit]=100`, `filter[offset]`, and `group_by[<code>]=*` or `group_by[tag:<key>]=*`. Flatten each value with `ConvertTo-OpenShiftCostRow`.
 - `OS_Tag_Keys`: tags endpoint, columns `count`, `key`, `enabled`, and `Group By` set to `tag`.
-- `OS_Cost_Project_Tags`: for each distinct project, `GET /api/cost-management/v1/tags/openshift/?filter[project]=...`. `Filter Month` is the end date's year, a hyphen, and the month number without a leading zero, for example `2026-9`.
+- `OS_Cost_Project_Tags`: for each distinct project, `GET /api/cost-management/v1/tags/openshift/?filter[project]=...`. `Filter Month` is the end date's year, a hyphen, and the month number without a leading zero. End date `2026-09-30` writes `2026-9`. The test asserts that exact string. `2026-09` fails.
 - `OS_Cost_Cluster_Projects`: for each distinct cluster, costs grouped by project. `value` null becomes `0`, matching the workbook's replace step. Drop rows whose project is null.
 - `OS_Daily_Usage`: usage models `compute` (Usage Code `cpu`), `memory`, `volumes` (Usage Code `volume`). Endpoints `/api/cost-management/v1/reports/openshift/<model>/`. Group by project, cluster, node, and tag key.
 - `AWS_Daily_Costs`: `/api/cost-management/v1/reports/aws/costs/` grouped by `account`, `service`, `region`, each AWS tag, each cost category (`aws_category:<key>`), and each org unit. Same null rules as OpenShift. `ConvertTo-AwsCostRow` fills the AWS header, including `values.account_alias`, `key`, `type`, and `values.alias`.
@@ -555,7 +623,9 @@ Dataset behavior:
 
 `.gitignore` gains a line `data/export/`.
 
-- [ ] **Step 1: Write failing tests for settings, one OpenShift cost page, an AWS host check, recommendations with a null term, and a failed single-day page**
+- [ ] **Step 1: Write failing tests for settings, one OpenShift cost page, project tags for September 2026, an AWS host check, recommendations with a null term, and a failed single-day page**
+
+The project-tags test uses `-EndDate 2026-09-30` and asserts `Filter Month` equals `2026-9`.
 
 The host test asserts the costs URL starts with `https://cost.example.com/api/cost-management/v1/reports/openshift/costs/`.
 
@@ -594,7 +664,7 @@ Expected: FAIL on `Export-CostManagementData`.
 
 The entry script reads `auth.csv` only after `-Help` is handled. Default `-AuthFile` is `<repo>/data/auth.csv`. Default `-OutDir` is `<repo>/data/export`. Parse dates as `yyyy-MM-dd` and throw a message that names that format when parsing fails. Pass `Start-Sleep` as `-Sleep`.
 
-Production `-Invoke` is `Invoke-WebRequest` on Windows PowerShell 5.1. A 4xx or 5xx throws. Catch that exception, read `StatusCode` from `$_.Exception.Response`, and return the same object the tests return: `StatusCode`, `Json`, `Body`. Do not use `-SkipHttpErrorCheck`. That parameter is not in Windows PowerShell 5.1.
+Production requests go through `Invoke-CostManagementWebRequest` from Task 3c, which applies the system proxy and TLS 1.2. The underlying call is `Invoke-WebRequest` on Windows PowerShell 5.1. A 4xx or 5xx throws. Catch that exception, read `StatusCode` from `$_.Exception.Response`, and return the same object the tests return: `StatusCode`, `Json`, `Body`. Do not use `-SkipHttpErrorCheck`. That parameter is not in Windows PowerShell 5.1.
 
 Cost and usage URLs use `filter[limit]` and `filter[offset]`. The recommendations URL uses `limit` and `offset`.
 
@@ -648,11 +718,12 @@ Required sections, in order:
 2. Requirements: Windows PowerShell 5.1, Power BI Desktop, a service account.
 3. Credentials: copy `auth.csv.sample` to `data/auth.csv`.
 4. See datasets and date format: `powershell.exe -File scripts/Export-CostManagement.ps1 -Help`.
-5. Check the service account: `powershell.exe -File scripts/Export-CostManagement.ps1 -Test`. Document `credentials: accepted`, `credentials: rejected`, `permissions: denied`, and `connection: failed`.
-6. SaaS export: `powershell.exe -File scripts/Export-CostManagement.ps1`.
-7. Self-managed export: same command with `-TokenUrl` and `-ApiBaseUrl`.
-8. Refresh `PowerBI/CostManagement.pbix`.
-9. Failures: read `data/export/export.log`, then rerun with `-Dataset` and a shorter date window. Refresh the report only after the script exits 0.
+5. Check the proxy: `powershell.exe -File scripts/Export-CostManagement.ps1 -TestProxy`. Document `direct`, `bypassed`, a proxy host with no userinfo, and `failed`.
+6. Check the service account: `powershell.exe -File scripts/Export-CostManagement.ps1 -Test`. Document `credentials: accepted`, `credentials: rejected`, `permissions: denied`, and `connection: failed`.
+7. SaaS export: `powershell.exe -File scripts/Export-CostManagement.ps1`.
+8. Self-managed export: same command with `-TokenUrl` and `-ApiBaseUrl`.
+9. Refresh `PowerBI/CostManagement.pbix`.
+10. Failures: read `data/export/export.log`, then rerun with `-Dataset` and a shorter date window. Refresh the report only after the script exits 0.
 
 Remove Excel setup, Excel refresh, Excel performance, and Excel troubleshooting. Do not leave a legacy Excel section.
 
@@ -700,7 +771,7 @@ git commit -m "Document the CSV export workflow and remove the Excel workbooks."
 
 - [ ] **Step 1: Open `PowerBI/CostManagement.pbix` in Power BI Desktop**
 
-This step cannot be done by editing the binary `DataModel`. If Power BI Desktop is not installed, stop this task and leave a note in the commit message's absence: do not commit a hand-edited `DataModel`.
+Apply this task in Power BI Desktop. Do not leave it as a click-path for the user. This step cannot be done by editing the binary `DataModel`. If Desktop is not installed, or a sign-in dialog cannot be completed, stop this task and say which dialog is open. Do not commit a hand-edited `DataModel`.
 
 - [ ] **Step 2: Add the `DataFolder` parameter and replace each Excel source**
 
