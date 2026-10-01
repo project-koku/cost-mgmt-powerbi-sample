@@ -228,15 +228,15 @@ API-backed files, written under `data/export/`:
 | File | What a run writes |
 | --- | --- |
 | `Data_Period.csv` | One row per export window. A later run adds a window and keeps earlier windows. The same start and end are stored once. |
-| `Default_Master_Settings.csv` | Currency name, symbol, description, and cost type. Replaced when the currency catalog returns HTTP 200 and includes the account currency. Otherwise the previous file stays. |
+| `Default_Master_Settings.csv` | Currency name, symbol, description, and cost type. The catalog is paged with `limit` and `offset` until the account currency is found. Replaced when that item is found. Otherwise the previous file stays. |
 | `OS_Costs_Daily.csv` | Daily OpenShift costs. A later run replaces rows whose `date` is inside the new window and keeps the other days. |
 | `OS_Cost_Project_Tags.csv` | Project tags once per month. A later run replaces a month when the new window overlaps that month. |
 | `OS_Cost_Cluster_Projects.csv` | One row per project day on each cluster. A later run replaces days inside the new window. |
-| `OS_Tag_Keys.csv` | OpenShift tag keys, paged with `filter[limit]` and `filter[offset]`. Replaced on HTTP 200. A non-200 leaves the previous file. |
+| `OS_Tag_Keys.csv` | OpenShift tag keys, paged with `limit` and `offset`. Replaced on HTTP 200. A non-200 leaves the previous file. |
 | `OS_Daily_Usage.csv` | Daily usage. A later run replaces days inside the new window. |
 | `AWS_Daily_Costs.csv` | Daily AWS costs. A later run replaces days inside the new window. |
 | `AWS_Tag_Keys.csv` | AWS tag keys, paged the same way as OpenShift tag keys. A non-200 leaves the previous file. |
-| `AWS_Cost_Categories.csv` | AWS cost categories. `key_only=true` returns a list of strings, and each string is the `data` column. A non-200 leaves the previous file. |
+| `AWS_Cost_Categories.csv` | AWS cost categories. One request with `key_only=true` and no page parameters. Each string in `data` is the `data` column. A non-200 leaves the previous file. |
 | `AWS_Org_Units.csv` | AWS org units, replacing the file |
 | `Recommendations.csv` | OpenShift recommendations, replacing the file on HTTP 200. A non-200 leaves the previous file. |
 
@@ -338,6 +338,7 @@ Assertions:
 - Project tags for 1 August 2026 through 5 September 2026 write `2026-8` on `2026-08-01` and `2026-9` on `2026-09-01`.
 - A later run keeps fact rows outside the new window, replaces project-tag months the window overlaps, and keeps earlier `Data_Period` windows. Settings stay one replaced row.
 - A currency catalog returned as one object copies `name`, `symbol`, and `description`.
+- The account currency on a later catalog page still copies `name`, `symbol`, and `description`.
 - A currency HTTP 404 leaves the previous settings description in place and logs `status=404`.
 - A currency catalog with no item for the account currency leaves the previous settings description in place and logs `status=200` and `currency catalog has no match`.
 - Usage rows copy `capacity.count`, `capacity.unused`, and `request.unused`.

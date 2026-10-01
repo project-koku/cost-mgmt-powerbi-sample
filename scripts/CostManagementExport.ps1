@@ -635,16 +635,32 @@ function Write-CostManagementLog {
 
 function Get-CostManagementAccount {
     param($Session, [string]$ApiBaseUrl, [scriptblock]$Invoke, [scriptblock]$Sleep)
-    $currencyResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/currency/' -Session $Session -Invoke $Invoke -Sleep $Sleep
     $settingsResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/account-settings/' -Session $Session -Invoke $Invoke -Sleep $Sleep
     $settings = Get-CostManagementJsonField -Object $settingsResponse.Json -Name 'data'
     $code = [string](Get-CostManagementJsonField -Object $settings -Name 'currency')
     $costType = [string](Get-CostManagementJsonField -Object $settings -Name 'cost_type')
     $match = $null
-    foreach ($item in (ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $currencyResponse.Json -Name 'data'))) {
-        if ([string](Get-CostManagementJsonField -Object $item -Name 'code') -eq $code) { $match = $item }
+    $status = 0
+    $offset = 0
+    while ($true) {
+        $relative = '/api/cost-management/v1/currency/?limit=100&offset=' + $offset
+        $currencyResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
+        $status = [int]$currencyResponse.StatusCode
+        if ($status -ne 200) { break }
+        $meta = Get-CostManagementJsonField -Object $currencyResponse.Json -Name 'meta'
+        $countValue = Get-CostManagementJsonField -Object $meta -Name 'count'
+        $count = 0
+        if ($null -ne $countValue) { $count = [int]$countValue }
+        $data = ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $currencyResponse.Json -Name 'data')
+        foreach ($item in $data) {
+            if ([string](Get-CostManagementJsonField -Object $item -Name 'code') -eq $code) { $match = $item }
+        }
+        if ($match) { break }
+        if ($data.Count -eq 0) { break }
+        $offset += 100
+        if ($count -eq 0 -or $offset -ge $count) { break }
     }
-    return [pscustomobject]@{ Code = $code; CostType = $costType; Currency = $match; CurrencyStatus = [int]$currencyResponse.StatusCode }
+    return [pscustomobject]@{ Code = $code; CostType = $costType; Currency = $match; CurrencyStatus = $status }
 }
 
 function Get-CostManagementDistinctKeys {
@@ -1002,8 +1018,15 @@ function Get-CostManagementProjectTagRows {
     return $rows
 }
 
+function Get-CostManagementItems {
+    param($ApiBaseUrl, $Session, $Invoke, $Sleep, [string]$RelativeUrl)
+    $response = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl $RelativeUrl -Session $Session -Invoke $Invoke -Sleep $Sleep
+    if ([int]$response.StatusCode -ne 200) { throw ('status=' + [int]$response.StatusCode + ' ' + $RelativeUrl) }
+    return (ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $response.Json -Name 'data'))
+}
+
 function Get-CostManagementPagedItems {
-    param($ApiBaseUrl, $Session, $Invoke, $Sleep, [string]$RelativeUrl, [string]$LimitName = 'filter[limit]', [string]$OffsetName = 'filter[offset]')
+    param($ApiBaseUrl, $Session, $Invoke, $Sleep, [string]$RelativeUrl, [string]$LimitName = 'limit', [string]$OffsetName = 'offset')
     $items = New-Object System.Collections.Generic.List[object]
     $offset = 0
     while ($true) {
@@ -1011,7 +1034,7 @@ function Get-CostManagementPagedItems {
         if ($RelativeUrl.Contains('?')) { $separator = '&' }
         $relative = '{0}{1}{2}=100&{3}={4}' -f $RelativeUrl, $separator, $LimitName, $OffsetName, $offset
         $response = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
-        if ([int]$response.StatusCode -ne 200) { throw ('status=' + [int]$response.StatusCode) }
+        if ([int]$response.StatusCode -ne 200) { throw ('status=' + [int]$response.StatusCode + ' ' + $relative) }
         $meta = Get-CostManagementJsonField -Object $response.Json -Name 'meta'
         $countValue = Get-CostManagementJsonField -Object $meta -Name 'count'
         $count = 0
@@ -1136,7 +1159,7 @@ function Get-CostManagementAwsCostRows {
     foreach ($key in (Get-CostManagementDistinctKeys -Items $tagItems -Names @('key'))) {
         $groups.Add([pscustomobject]@{ Code = 'tag'; Query = ('group_by[tag:{0}]=*' -f [uri]::EscapeDataString($key)); Key = $key })
     }
-    $categoryItems = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/resource-types/aws-categories/?key_only=true'
+    $categoryItems = Get-CostManagementItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/resource-types/aws-categories/?key_only=true'
     foreach ($key in (Get-CostManagementDistinctKeys -Items $categoryItems -Names @('key', 'data'))) {
         $groups.Add([pscustomobject]@{ Code = 'aws_category'; Query = ('group_by[aws_category:{0}]=*' -f [uri]::EscapeDataString($key)); Key = $key })
     }
@@ -1157,7 +1180,7 @@ function Get-CostManagementAwsCostRows {
 
 function Get-CostManagementCategoryRows {
     param($ApiBaseUrl, $Session, $Invoke, $Sleep, $StartDate, $EndDate)
-    $items = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/resource-types/aws-categories/?key_only=true'
+    $items = Get-CostManagementItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/resource-types/aws-categories/?key_only=true'
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($item in $items) {
         $row = New-CostManagementRow 'AWS_Cost_Categories'

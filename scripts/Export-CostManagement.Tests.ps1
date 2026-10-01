@@ -778,6 +778,26 @@ Assert-True 'currency miss keeps description' ($currencyMissRow.description -eq 
 Assert-True 'currency miss logs status' ($currencyMissLog -match 'status=200' -and $currencyMissLog -match 'currency catalog has no match')
 Remove-Item $currencyMissDir -Recurse -Force
 
+$currencyPageDir = Join-Path $env:TEMP ("cm-currency-page-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $currencyPageDir | Out-Null
+$currencyPageInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*' -and $u.Contains('offset=100')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD'; name = 'US Dollar'; symbol = '$'; description = 'USD ($) - US Dollar' }); meta = @{ count = 101 } }; Body = '' }
+    }
+    if ($u -like '*/currency/*') {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'EUR'; name = 'Euro'; symbol = 'E'; description = 'EUR (E) - Euro' }); meta = @{ count = 101 } }; Body = '' }
+    }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $currencyPageDir -Dataset 'Default_Master_Settings' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $currencyPageInvoke -Now { Get-Date } -Sleep { }
+$currencyPageRow = Import-Csv (Join-Path $currencyPageDir 'Default_Master_Settings.csv')
+Assert-True 'currency match on the next page copies description' ($currencyPageRow.description -eq 'USD ($) - US Dollar' -and $currencyPageRow.code -eq 'USD')
+Remove-Item $currencyPageDir -Recurse -Force
+
 $usagePq = Get-Content -Raw (Join-Path $PSScriptRoot '..\PowerBI\OS_Daily_Usage.pq')
 $awsPq = Get-Content -Raw (Join-Path $PSScriptRoot '..\PowerBI\AWS_Daily_Costs.pq')
 $osCostPq = Get-Content -Raw (Join-Path $PSScriptRoot '..\PowerBI\OS_Costs_Daily.pq')
@@ -808,16 +828,21 @@ Remove-Item $capacityDir -Recurse -Force
 
 $categoryDir = Join-Path $env:TEMP ("cm-category-strings-" + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $categoryDir | Out-Null
+$script:CategoryUrls = @()
 $categoryInvoke = {
     param($Method, $Uri, $Headers, $Body)
     $u = [string]$Uri
     if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
-    if ($u.Contains('/aws-categories/')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @('Env', 'Team'); meta = @{ count = 2 } }; Body = '' } }
+    if ($u.Contains('/aws-categories/')) {
+        $script:CategoryUrls += $u
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @('Env', 'Team'); meta = @{ count = 2 } }; Body = '' }
+    }
     return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
 }
 Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $categoryDir -Dataset 'AWS_Cost_Categories' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $categoryInvoke -Now { Get-Date } -Sleep { }
 $categoryRows = @(Import-Csv (Join-Path $categoryDir 'AWS_Cost_Categories.csv'))
 Assert-True 'category strings fill data' ((@($categoryRows | Where-Object { $_.data -eq 'Env' })).Count -eq 1 -and (@($categoryRows | Where-Object { $_.data -eq 'Team' })).Count -eq 1)
+Assert-True 'category request has no page parameters' ($script:CategoryUrls.Count -eq 1 -and $script:CategoryUrls[0].Contains('key_only=true') -and -not $script:CategoryUrls[0].Contains('offset') -and -not $script:CategoryUrls[0].Contains('limit'))
 Remove-Item $categoryDir -Recurse -Force
 
 $script:TagFirstPage = New-Object System.Collections.Generic.List[object]
@@ -828,8 +853,8 @@ $tagPageInvoke = {
     param($Method, $Uri, $Headers, $Body)
     $u = [string]$Uri
     if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
-    if ($u.Contains('/tags/openshift/') -and $u.Contains('filter[offset]=0')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = $script:TagFirstPage; meta = @{ count = 101 } }; Body = '' } }
-    if ($u.Contains('/tags/openshift/') -and $u.Contains('filter[offset]=100')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ key = 'last'; enabled = $true }); meta = @{ count = 101 } }; Body = '' } }
+    if ($u.Contains('/tags/openshift/') -and $u.Contains('offset=0') -and -not $u.Contains('filter[offset]')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = $script:TagFirstPage; meta = @{ count = 101 } }; Body = '' } }
+    if ($u.Contains('/tags/openshift/') -and $u.Contains('offset=100')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ key = 'last'; enabled = $true }); meta = @{ count = 101 } }; Body = '' } }
     return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
 }
 Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $tagPageDir -Dataset 'OS_Tag_Keys' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $tagPageInvoke -Now { Get-Date } -Sleep { }
