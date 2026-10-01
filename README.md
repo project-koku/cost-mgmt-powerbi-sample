@@ -88,11 +88,11 @@ Dates use `yyyy-MM-dd`. Refresh after the script exits 0. The Period lists updat
 
 Each run adds one `Data_Period` row for that window. A window that is already listed stays once. Earlier windows stay, so the calendar runs from the earliest start through the latest end already on disk. Delete `Data_Period.csv` to start the calendar over.
 
-Daily cost, usage, and cluster-project rows keep the day they belong to. A later run replaces only rows whose day is inside the new window. Project tags are stored once per month, dated the first of that month. A later run replaces a month's tags when the new window overlaps that month. Delete a dataset CSV to drop its history. Settings, tag-key lists, cost categories, org units, and recommendations are replaced in full on each run.
+Daily cost, usage, and cluster-project rows keep the day they belong to. A later run replaces only rows whose day is inside the new window. Project tags are stored once per month, dated the first of that month. A later run replaces a month's tags when the new window overlaps that month. Delete a dataset CSV to drop its history. Tag-key lists, cost categories, org units, and recommendations are replaced in full on each run. Settings are replaced when the currency catalog returns the account currency, including its name, symbol, and description. A currency call that is not HTTP 200, or a catalog with no matching currency, keeps the previous settings file and the run exits 1.
 
 ### OpenShift, Cost overview, and Amazon Web Services
 
-OpenShift Details and Amazon Web Services share one Period dropdown. Cost overview uses that same selection. Open the dropdown, choose a month that is listed, and save the report. A month is listed when the exported window includes it. Saving the report keeps that month selected the next time the file opens.
+OpenShift Details, Cost overview, and Amazon Web Services each have a Period dropdown for the same month. Changing the month on one of those pages changes it on the other two. Open the dropdown, choose a month that is listed, and save the report. A month is listed when the exported window includes it. Saving the report keeps that month selected the next time the file opens.
 
 ### Cost Explorer
 

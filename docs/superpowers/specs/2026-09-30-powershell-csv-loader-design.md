@@ -228,7 +228,7 @@ API-backed files, written under `data/export/`:
 | File | What a run writes |
 | --- | --- |
 | `Data_Period.csv` | One row per export window. A later run adds a window and keeps earlier windows. The same start and end are stored once. |
-| `Default_Master_Settings.csv` | Currency description and cost type, replacing the file |
+| `Default_Master_Settings.csv` | Currency name, symbol, description, and cost type. Replaced when the currency catalog returns HTTP 200 and includes the account currency. Otherwise the previous file stays. |
 | `OS_Costs_Daily.csv` | Daily OpenShift costs. A later run replaces rows whose `date` is inside the new window and keeps the other days. |
 | `OS_Cost_Project_Tags.csv` | Project tags once per month. A later run replaces a month when the new window overlaps that month. |
 | `OS_Cost_Cluster_Projects.csv` | One row per project day on each cluster. A later run replaces days inside the new window. |
@@ -337,6 +337,9 @@ Assertions:
 - A nested cost page with an August value and a September value writes both days. The requests are 1 August through 31 August and 1 September through 5 September.
 - Project tags for 1 August 2026 through 5 September 2026 write `2026-8` on `2026-08-01` and `2026-9` on `2026-09-01`.
 - A later run keeps fact rows outside the new window, replaces project-tag months the window overlaps, and keeps earlier `Data_Period` windows. Settings stay one replaced row.
+- A currency catalog returned as one object copies `name`, `symbol`, and `description`.
+- A currency HTTP 404 leaves the previous settings description in place and logs `status=404`.
+- A currency catalog with no item for the account currency leaves the previous settings description in place and logs `status=200` and `currency catalog has no match`.
 - `data/static/Project_Overhead_Cost_Types.csv` contains `Don't distribute  overhead costs` with two spaces.
 
 A live run against a service account is a manual check: currency, account settings, and one OpenShift project day, then a full export, then refresh `CostManagement.pbix` and confirm the existing pages show rows. That live check is not part of the unit tests. SaaS and a self-managed instance are both valid targets for it.

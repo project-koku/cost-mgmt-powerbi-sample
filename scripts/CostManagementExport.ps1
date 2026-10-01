@@ -644,7 +644,7 @@ function Get-CostManagementAccount {
     foreach ($item in (ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $currencyResponse.Json -Name 'data'))) {
         if ([string](Get-CostManagementJsonField -Object $item -Name 'code') -eq $code) { $match = $item }
     }
-    return [pscustomobject]@{ Code = $code; CostType = $costType; Currency = $match }
+    return [pscustomobject]@{ Code = $code; CostType = $costType; Currency = $match; CurrencyStatus = [int]$currencyResponse.StatusCode }
 }
 
 function Get-CostManagementDistinctKeys {
@@ -895,9 +895,11 @@ function Export-CostManagementData {
             Publish-CostManagementDataset -OutDir $OutDir -DatasetId $datasetId -Header $header -Rows $merged
         } catch {
             $status = '500'
-            if ([string]$_.Exception.Message -match 'status=(\d+)') { $status = $Matches[1] }
+            $message = [string]$_.Exception.Message
+            if ($message -match 'status=(\d+)') { $status = $Matches[1] }
             $body = ''
-            if ($_.Exception.Message -notmatch 'status=') { $body = $_.Exception.Message }
+            if ($message -match 'status=\d+\s+(.+)$') { $body = $Matches[1].Trim() }
+            elseif ($message -notmatch 'status=') { $body = $message }
             Write-CostManagementLog -OutDir $OutDir -DatasetId $datasetId -StartDate $start -EndDate $end -Status $status -Body $body
             throw
         }
@@ -926,6 +928,8 @@ function Get-CostManagementDatasetRows {
 function Get-CostManagementSettingsRows {
     param($ApiBaseUrl, $Session, $Invoke, $Sleep, $StartDate, $EndDate)
     $account = Get-CostManagementAccount -Session $Session -ApiBaseUrl $ApiBaseUrl -Invoke $Invoke -Sleep $Sleep
+    if ([int]$account.CurrencyStatus -ne 200) { throw ('status=' + [int]$account.CurrencyStatus) }
+    if (-not $account.Currency) { throw 'status=200 currency catalog has no match' }
     $row = New-CostManagementRow 'Default_Master_Settings'
     $row['code'] = $account.Code
     $row['Default_Configurations.data.currency'] = $account.Code

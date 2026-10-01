@@ -695,6 +695,89 @@ $settingsAgain = Import-Csv (Join-Path $periodDir 'Default_Master_Settings.csv')
 Assert-True 'settings stay one row' (@($settingsAgain).Count -eq 1 -and $settingsAgain.code -eq 'USD')
 Remove-Item $periodDir -Recurse -Force
 
+$oneCurrency = [pscustomobject]@{ code = 'USD'; name = 'US Dollar'; symbol = '$'; description = 'USD ($) - US Dollar' }
+$oneList = ConvertTo-CostManagementItemList $oneCurrency
+Assert-True 'single currency object stays one item' ($oneList.Count -eq 1 -and [string](Get-CostManagementJsonField -Object $oneList[0] -Name 'code') -eq 'USD')
+
+$singleDir = Join-Path $env:TEMP ("cm-currency-object-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $singleDir | Out-Null
+$singleInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ data = $oneCurrency }; Body = '' }
+    }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $singleDir -Dataset 'Default_Master_Settings' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $singleInvoke -Now { Get-Date } -Sleep { }
+$singleRow = Import-Csv (Join-Path $singleDir 'Default_Master_Settings.csv')
+Assert-True 'single currency object copies description' ($singleRow.description -eq 'USD ($) - US Dollar' -and $singleRow.name -eq 'US Dollar' -and $singleRow.symbol -eq '$')
+Remove-Item $singleDir -Recurse -Force
+
+function Write-SettingsFixture {
+    param([string]$Dir, [string]$Description)
+    $row = New-CostManagementRow 'Default_Master_Settings'
+    $row['code'] = 'USD'
+    $row['name'] = 'US Dollar'
+    $row['symbol'] = '$'
+    $row['description'] = $Description
+    $row['Default_Configurations.data.currency'] = 'USD'
+    $row['Default_Configurations.data.cost_type'] = 'calculated'
+    Write-CostManagementCsv -Path (Join-Path $Dir 'Default_Master_Settings.csv') -Header (Get-CostManagementSchemaHeader 'Default_Master_Settings') -Rows @($row)
+}
+
+$currencyFailDir = Join-Path $env:TEMP ("cm-currency-fail-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $currencyFailDir | Out-Null
+Write-SettingsFixture -Dir $currencyFailDir -Description 'keep me'
+$currencyFailInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 404; Json = $null; Body = 'missing' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+$currencyFailThrew = $false
+try {
+    Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $currencyFailDir -Dataset 'Default_Master_Settings' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $currencyFailInvoke -Now { Get-Date } -Sleep { }
+} catch {
+    $currencyFailThrew = $true
+}
+$currencyFailRow = Import-Csv (Join-Path $currencyFailDir 'Default_Master_Settings.csv')
+$currencyFailLog = ''
+if (Test-Path (Join-Path $currencyFailDir 'export.log')) { $currencyFailLog = Get-Content -Raw (Join-Path $currencyFailDir 'export.log') }
+Assert-True 'currency http failure fails the dataset' $currencyFailThrew
+Assert-True 'currency http failure keeps description' ($currencyFailRow.description -eq 'keep me')
+Assert-True 'currency http failure logs status' ($currencyFailLog -match 'status=404')
+Remove-Item $currencyFailDir -Recurse -Force
+
+$currencyMissDir = Join-Path $env:TEMP ("cm-currency-miss-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $currencyMissDir | Out-Null
+Write-SettingsFixture -Dir $currencyMissDir -Description 'keep me'
+$currencyMissInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'EUR'; name = 'Euro'; symbol = 'E'; description = 'EUR (E) - Euro' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+$currencyMissThrew = $false
+try {
+    Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $currencyMissDir -Dataset 'Default_Master_Settings' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $currencyMissInvoke -Now { Get-Date } -Sleep { }
+} catch {
+    $currencyMissThrew = $true
+}
+$currencyMissRow = Import-Csv (Join-Path $currencyMissDir 'Default_Master_Settings.csv')
+$currencyMissLog = ''
+if (Test-Path (Join-Path $currencyMissDir 'export.log')) { $currencyMissLog = Get-Content -Raw (Join-Path $currencyMissDir 'export.log') }
+Assert-True 'currency miss fails the dataset' $currencyMissThrew
+Assert-True 'currency miss keeps description' ($currencyMissRow.description -eq 'keep me')
+Assert-True 'currency miss logs status' ($currencyMissLog -match 'status=200' -and $currencyMissLog -match 'currency catalog has no match')
+Remove-Item $currencyMissDir -Recurse -Force
+
 if ($script:Failed -gt 0) { exit 1 }
 Write-Host "ALL PASS"
 exit 0
