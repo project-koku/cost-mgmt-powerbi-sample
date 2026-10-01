@@ -238,7 +238,7 @@ API-backed files, written under `data/export/`:
 | `AWS_Tag_Keys.csv` | AWS tag keys, paged the same way as OpenShift tag keys. A non-200 leaves the previous file. |
 | `AWS_Cost_Categories.csv` | AWS cost categories. One request with `key_only=true` and no page parameters. Each string in `data` is the `data` column. A non-200 leaves the previous file. |
 | `AWS_Org_Units.csv` | AWS org units, replacing the file |
-| `Recommendations.csv` | OpenShift recommendations, replacing the file on HTTP 200. A non-200 leaves the previous file. |
+| `Recommendations.csv` | OpenShift recommendations, replacing the file on HTTP 200. A non-200 leaves the previous file. `last_reported` is stored as `last_reported_time`. Current and recommended configuration columns are the limits and requests text the workbook built from `recommendations.current` and `recommendations.recommendation_terms`. |
 
 A dataset is written to `data/export/.partial/` and moved into `data/export/` only after every page for that dataset succeeds. A failed dataset leaves the previous CSV in place.
 

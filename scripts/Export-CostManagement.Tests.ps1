@@ -345,6 +345,58 @@ Assert-True 'recommendation cluster uuid' ($recRow.cluster_uuid -eq 'cu-1')
 Assert-True 'null short term is empty' ($recRow.'ST Rec Cost Config' -eq '')
 Remove-Item $recDir -Recurse -Force
 
+$recShapeDir = Join-Path $env:TEMP ("cm-rec-shape-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $recShapeDir | Out-Null
+$recShapeInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*recommendations/openshift*') {
+        $config = {
+            param($cpu, $memory)
+            return @{
+                limits = @{ cpu = @{ amount = $cpu; format = 'cores' }; memory = @{ amount = $memory; format = 'Mi' } }
+                requests = @{ cpu = @{ amount = $cpu; format = 'cores' }; memory = @{ amount = $memory; format = 'Mi' } }
+            }
+        }
+        $term = {
+            param($hours, $cpu, $memory)
+            return @{
+                duration_in_hours = $hours
+                monitoring_start_time = '2026-09-01T00:00:00Z'
+                recommendation_engines = @{
+                    cost = @{ config = (& $config $cpu $memory) }
+                    performance = @{ config = (& $config ($cpu + 1) $memory) }
+                }
+            }
+        }
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{
+            cluster_uuid = 'cu-2'
+            last_reported = '2026-09-05T12:00:00Z'
+            recommendations = @{
+                monitoring_end_time = '2026-09-05T00:00:00Z'
+                current = (& $config 2 512)
+                recommendation_terms = @{
+                    short_term = (& $term 24 1 256)
+                    medium_term = (& $term 168 3 1024)
+                }
+            }
+        }) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-01' -ClientId 'id' -ClientSecret 'secret' -OutDir $recShapeDir -Dataset 'Recommendations' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $recShapeInvoke -Now { Get-Date } -Sleep { }
+$recShape = Import-Csv (Join-Path $recShapeDir 'Recommendations.csv')
+Assert-True 'recommendation renames last reported' ($recShape.last_reported_time -eq '2026-09-05T12:00:00Z')
+Assert-True 'recommendation monitoring end' ($recShape.monitoring_end_time -eq '2026-09-05T00:00:00Z')
+Assert-True 'recommendation current configuration' ($recShape.'Current configuration' -eq "limits:          cpu: 2cores      memory: 512Mi`nrequests:     cpu: 2cores     memory: 512Mi")
+Assert-True 'recommendation short term duration' ($recShape.'st.duration_in_hours' -eq '24')
+Assert-True 'recommendation short term cost' ($recShape.'ST Rec Cost Config' -eq "limits:           cpu: 1cores     memory: 256Mi`nrequests:     cpu: 1cores     memory: 256Mi")
+Assert-True 'recommendation short term performance' ($recShape.'ST Rec Perf Config' -eq "limits:         cpu: 2cores    memory: 256Mi`nrequests:   cpu: 2cores    memory: 256Mi")
+Assert-True 'recommendation medium term duration' ($recShape.'mt.duration_in_hours' -eq '168')
+Assert-True 'recommendation long term stays empty' ($recShape.'LT Rec Cost Config' -eq '' -and $recShape.'lt.duration_in_hours' -eq '')
+Remove-Item $recShapeDir -Recurse -Force
+
 $failDir = Join-Path $env:TEMP ("cm-export-" + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $failDir | Out-Null
 $previous = "previous-row`n"

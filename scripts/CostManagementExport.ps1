@@ -1214,6 +1214,24 @@ function Get-CostManagementOrgRows {
     return $rows
 }
 
+function Format-CostManagementRecommendationConfig {
+    param($Config, [string]$LimitsCpu, [string]$LimitsMemory, [string]$RequestsCpu, [string]$RequestsMemory)
+    if ($null -eq $Config) { return '' }
+    $limits = Get-CostManagementJsonField -Object $Config -Name 'limits'
+    $requests = Get-CostManagementJsonField -Object $Config -Name 'requests'
+    $limitCpu = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $limits -Name 'cpu') -Name 'amount'
+    $limitCpuFormat = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $limits -Name 'cpu') -Name 'format'
+    $limitMemory = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $limits -Name 'memory') -Name 'amount'
+    $limitMemoryFormat = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $limits -Name 'memory') -Name 'format'
+    $requestCpu = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $requests -Name 'cpu') -Name 'amount'
+    $requestCpuFormat = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $requests -Name 'cpu') -Name 'format'
+    $requestMemory = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $requests -Name 'memory') -Name 'amount'
+    $requestMemoryFormat = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $requests -Name 'memory') -Name 'format'
+    $limitLine = $LimitsCpu + [string]$limitCpu + [string]$limitCpuFormat + $LimitsMemory + [string]$limitMemory + [string]$limitMemoryFormat
+    $requestLine = $RequestsCpu + [string]$requestCpu + [string]$requestCpuFormat + $RequestsMemory + [string]$requestMemory + [string]$requestMemoryFormat
+    return ($limitLine + "`n" + $requestLine)
+}
+
 function Get-CostManagementRecommendationRows {
     param($ApiBaseUrl, $Session, $Invoke, $Sleep, $StartDate, $EndDate)
     $rows = New-Object System.Collections.Generic.List[object]
@@ -1236,29 +1254,25 @@ function Get-CostManagementRecommendationRows {
                 if ($null -ne $value -and $value -isnot [System.Collections.IDictionary]) { $row[$column] = ConvertTo-CostManagementField $value }
             }
             $row['Index'] = [string]$index
-            $terms = Get-CostManagementJsonField -Object $item -Name 'recommendations'
-            $map = @{
-                'ST Rec Cost Config' = @('short_term', 'cost')
-                'ST Rec Perf Config' = @('short_term', 'performance')
-                'st.duration_in_hours' = @('short_term', 'duration_in_hours')
-                'st.monitoring_start_time' = @('short_term', 'monitoring_start_time')
-                'MT Rec Cost Config' = @('medium_term', 'cost')
-                'MT Rec Perf Config' = @('medium_term', 'performance')
-                'mt.duration_in_hours' = @('medium_term', 'duration_in_hours')
-                'mt.monitoring_start_time' = @('medium_term', 'monitoring_start_time')
-                'LT Rec Cost Config' = @('long_term', 'cost')
-                'LT Rec Perf Config' = @('long_term', 'performance')
-                'lt.duration_in_hours' = @('long_term', 'duration_in_hours')
-                'lt.monitoring_start_time' = @('long_term', 'monitoring_start_time')
-            }
-            foreach ($entry in $map.GetEnumerator()) {
-                $termName = $entry.Value[0]
-                $fieldName = $entry.Value[1]
-                $term = Get-CostManagementJsonField -Object $item -Name $termName
-                if ($null -eq $term) { $term = Get-CostManagementJsonField -Object $terms -Name $termName }
+            $row['last_reported_time'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $item -Name 'last_reported')
+            $recommendations = Get-CostManagementJsonField -Object $item -Name 'recommendations'
+            $row['monitoring_end_time'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $recommendations -Name 'monitoring_end_time')
+            $row['Current configuration'] = Format-CostManagementRecommendationConfig -Config (Get-CostManagementJsonField -Object $recommendations -Name 'current') -LimitsCpu 'limits:          cpu: ' -LimitsMemory '      memory: ' -RequestsCpu 'requests:     cpu: ' -RequestsMemory '     memory: '
+            $terms = Get-CostManagementJsonField -Object $recommendations -Name 'recommendation_terms'
+            $aligned = 'limits:         cpu: ', '    memory: ', 'requests:   cpu: ', '    memory: '
+            $map = @(
+                @{ Term = 'short_term'; Duration = 'st.duration_in_hours'; Start = 'st.monitoring_start_time'; Cost = 'ST Rec Cost Config'; Perf = 'ST Rec Perf Config'; CostGaps = @('limits:           cpu: ', '     memory: ', 'requests:     cpu: ', '     memory: '); PerfGaps = $aligned },
+                @{ Term = 'medium_term'; Duration = 'mt.duration_in_hours'; Start = 'mt.monitoring_start_time'; Cost = 'MT Rec Cost Config'; Perf = 'MT Rec Perf Config'; CostGaps = $aligned; PerfGaps = $aligned },
+                @{ Term = 'long_term'; Duration = 'lt.duration_in_hours'; Start = 'lt.monitoring_start_time'; Cost = 'LT Rec Cost Config'; Perf = 'LT Rec Perf Config'; CostGaps = $aligned; PerfGaps = $aligned }
+            )
+            foreach ($entry in $map) {
+                $term = Get-CostManagementJsonField -Object $terms -Name $entry.Term
                 if ($null -eq $term) { continue }
-                $field = Get-CostManagementJsonField -Object $term -Name $fieldName
-                if ($null -ne $field) { $row[$entry.Key] = ConvertTo-CostManagementField $field }
+                $row[$entry.Duration] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $term -Name 'duration_in_hours')
+                $row[$entry.Start] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $term -Name 'monitoring_start_time')
+                $engines = Get-CostManagementJsonField -Object $term -Name 'recommendation_engines'
+                $row[$entry.Cost] = Format-CostManagementRecommendationConfig -Config (Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $engines -Name 'cost') -Name 'config') -LimitsCpu $entry.CostGaps[0] -LimitsMemory $entry.CostGaps[1] -RequestsCpu $entry.CostGaps[2] -RequestsMemory $entry.CostGaps[3]
+                $row[$entry.Perf] = Format-CostManagementRecommendationConfig -Config (Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $engines -Name 'performance') -Name 'config') -LimitsCpu $entry.PerfGaps[0] -LimitsMemory $entry.PerfGaps[1] -RequestsCpu $entry.PerfGaps[2] -RequestsMemory $entry.PerfGaps[3]
             }
             $rows.Add($row)
             $index++

@@ -617,7 +617,7 @@ Dataset behavior:
 - `AWS_Tag_Keys`: `/api/cost-management/v1/tags/aws/`.
 - `AWS_Cost_Categories`: `/api/cost-management/v1/resource-types/aws-categories/?key_only=true` with no page parameters. A string in `data` is the category name.
 - `AWS_Org_Units`: `/api/cost-management/v1/organizations/aws/`.
-- `Recommendations`: page `GET /api/cost-management/v1/recommendations/openshift` with `limit` and `offset`. One CSV row per recommendation. Short, medium, and long term recommendation objects map onto the `ST`, `MT`, and `LT` columns. A missing term leaves those columns empty. A non-200 keeps the previous file.
+- `Recommendations`: page `GET /api/cost-management/v1/recommendations/openshift` with `limit` and `offset`. One CSV row per recommendation. `last_reported` is written to `last_reported_time`. `monitoring_end_time` comes from `recommendations`. Current configuration text comes from `recommendations.current`. Short, medium, and long term duration, start time, and cost and performance text come from `recommendations.recommendation_terms`. A missing term leaves those columns empty. A non-200 keeps the previous file.
 
 `export.log` lines look like `OS_Costs_Daily 2026-09-01 2026-09-01 offset=0 status=500`. Do not write response bodies that contain an `Authorization` header. Strip that header if a body is logged.
 
