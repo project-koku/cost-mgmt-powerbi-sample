@@ -232,13 +232,13 @@ API-backed files, written under `data/export/`:
 | `OS_Costs_Daily.csv` | Daily OpenShift costs. A later run replaces rows whose `date` is inside the new window and keeps the other days. |
 | `OS_Cost_Project_Tags.csv` | Project tags once per month. A later run replaces a month when the new window overlaps that month. |
 | `OS_Cost_Cluster_Projects.csv` | One row per project day on each cluster. A later run replaces days inside the new window. |
-| `OS_Tag_Keys.csv` | OpenShift tag keys, replacing the file |
+| `OS_Tag_Keys.csv` | OpenShift tag keys, paged with `filter[limit]` and `filter[offset]`. Replaced on HTTP 200. A non-200 leaves the previous file. |
 | `OS_Daily_Usage.csv` | Daily usage. A later run replaces days inside the new window. |
 | `AWS_Daily_Costs.csv` | Daily AWS costs. A later run replaces days inside the new window. |
-| `AWS_Tag_Keys.csv` | AWS tag keys, replacing the file |
-| `AWS_Cost_Categories.csv` | AWS cost categories, replacing the file |
+| `AWS_Tag_Keys.csv` | AWS tag keys, paged the same way as OpenShift tag keys. A non-200 leaves the previous file. |
+| `AWS_Cost_Categories.csv` | AWS cost categories. `key_only=true` returns a list of strings, and each string is the `data` column. A non-200 leaves the previous file. |
 | `AWS_Org_Units.csv` | AWS org units, replacing the file |
-| `Recommendations.csv` | OpenShift recommendations, replacing the file |
+| `Recommendations.csv` | OpenShift recommendations, replacing the file on HTTP 200. A non-200 leaves the previous file. |
 
 A dataset is written to `data/export/.partial/` and moved into `data/export/` only after every page for that dataset succeeds. A failed dataset leaves the previous CSV in place.
 
@@ -340,6 +340,11 @@ Assertions:
 - A currency catalog returned as one object copies `name`, `symbol`, and `description`.
 - A currency HTTP 404 leaves the previous settings description in place and logs `status=404`.
 - A currency catalog with no item for the account currency leaves the previous settings description in place and logs `status=200` and `currency catalog has no match`.
+- Usage rows copy `capacity.count`, `capacity.unused`, and `request.unused`.
+- A `key_only` category list of strings fills the `data` column.
+- Tag keys with `meta.count` above 100 are read from the next page.
+- A tag-key HTTP 404 and a recommendation HTTP 404 each leave the previous CSV in place and log `status=404`.
+- `values.capacity.value`, AWS usage and supplementary amounts, and OpenShift supplementary raw and markup amounts are imported as `type number` in the Power Query copies.
 - `data/static/Project_Overhead_Cost_Types.csv` contains `Don't distribute  overhead costs` with two spaces.
 
 A live run against a service account is a manual check: currency, account settings, and one OpenShift project day, then a full export, then refresh `CostManagement.pbix` and confirm the existing pages show rows. That live check is not part of the unit tests. SaaS and a self-managed instance are both valid targets for it.

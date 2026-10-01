@@ -945,10 +945,10 @@ function Get-CostManagementSettingsRows {
 function Get-CostManagementOpenShiftCostRows {
     param($ApiBaseUrl, $Session, $Invoke, $Sleep, $StartDate, $EndDate)
     $account = Get-CostManagementAccount -Session $Session -ApiBaseUrl $ApiBaseUrl -Invoke $Invoke -Sleep $Sleep
-    $tagResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/tags/openshift/?filter[limit]=100&filter[offset]=0' -Session $Session -Invoke $Invoke -Sleep $Sleep
+    $tagItems = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/tags/openshift/'
     $groups = New-Object System.Collections.Generic.List[object]
     foreach ($name in @('project', 'cluster', 'node')) { $groups.Add([pscustomobject]@{ Code = $name; Query = ('group_by[{0}]=*' -f $name); Key = $null }) }
-    foreach ($tag in (ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $tagResponse.Json -Name 'data'))) {
+    foreach ($tag in $tagItems) {
         $key = [string](Get-CostManagementJsonField -Object $tag -Name 'key')
         if (-not $key -and $tag -is [string]) { $key = [string]$tag }
         if ($key) { $groups.Add([pscustomobject]@{ Code = 'tag'; Query = ('group_by[tag:{0}]=*' -f [uri]::EscapeDataString($key)); Key = $key }) }
@@ -976,9 +976,8 @@ function Get-CostManagementProjectTagRows {
     $months = Get-CostManagementMonthWindows -StartDate $StartDate -EndDate $EndDate
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($project in $projects) {
-        $tagUrl = '/api/cost-management/v1/tags/openshift/?filter[project]=' + [uri]::EscapeDataString($project) + '&filter[limit]=100&filter[offset]=0'
-        $tagResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl $tagUrl -Session $Session -Invoke $Invoke -Sleep $Sleep
-        $tags = ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $tagResponse.Json -Name 'data')
+        $tagUrl = '/api/cost-management/v1/tags/openshift/?filter[project]=' + [uri]::EscapeDataString($project)
+        $tags = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl $tagUrl
         foreach ($month in $months) {
             $first = Get-Date -Year $month.StartDate.Year -Month $month.StartDate.Month -Day 1
             $monthLabel = Get-CostManagementFilterMonth $first
@@ -988,9 +987,13 @@ function Get-CostManagementProjectTagRows {
                 $row['code'] = $account.Code
                 $row['date'] = $first.ToString('yyyy-MM-dd')
                 $row['project'] = $project
-                $row['key'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'key')
-                $row['values'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'values')
-                $row['enabled'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'enabled')
+                if ($tag -is [string]) {
+                    $row['key'] = [string]$tag
+                } else {
+                    $row['key'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'key')
+                    $row['values'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'values')
+                    $row['enabled'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'enabled')
+                }
                 $row['Filter Month'] = $monthLabel
                 $rows.Add($row)
             }
@@ -999,17 +1002,44 @@ function Get-CostManagementProjectTagRows {
     return $rows
 }
 
+function Get-CostManagementPagedItems {
+    param($ApiBaseUrl, $Session, $Invoke, $Sleep, [string]$RelativeUrl, [string]$LimitName = 'filter[limit]', [string]$OffsetName = 'filter[offset]')
+    $items = New-Object System.Collections.Generic.List[object]
+    $offset = 0
+    while ($true) {
+        $separator = '?'
+        if ($RelativeUrl.Contains('?')) { $separator = '&' }
+        $relative = '{0}{1}{2}=100&{3}={4}' -f $RelativeUrl, $separator, $LimitName, $OffsetName, $offset
+        $response = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
+        if ([int]$response.StatusCode -ne 200) { throw ('status=' + [int]$response.StatusCode) }
+        $meta = Get-CostManagementJsonField -Object $response.Json -Name 'meta'
+        $countValue = Get-CostManagementJsonField -Object $meta -Name 'count'
+        $count = 0
+        if ($null -ne $countValue) { $count = [int]$countValue }
+        $data = ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $response.Json -Name 'data')
+        foreach ($item in $data) { $items.Add($item) }
+        if ($data.Count -eq 0) { break }
+        $offset += 100
+        if ($count -eq 0 -or $offset -ge $count) { break }
+    }
+    Write-Output -NoEnumerate $items
+}
+
 function Get-CostManagementTagKeyRows {
     param($ApiBaseUrl, $Session, $Invoke, $Sleep, $StartDate, $EndDate, [string]$RelativeUrl)
-    $response = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl ($RelativeUrl + '?filter[limit]=100&filter[offset]=0') -Session $Session -Invoke $Invoke -Sleep $Sleep
+    $tags = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl $RelativeUrl
     $datasetId = 'OS_Tag_Keys'
     if ($RelativeUrl -like '*tags/aws*') { $datasetId = 'AWS_Tag_Keys' }
     $rows = New-Object System.Collections.Generic.List[object]
-    foreach ($tag in (ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $response.Json -Name 'data'))) {
+    foreach ($tag in $tags) {
         $row = New-CostManagementRow $datasetId
-        $row['count'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'count')
-        $row['key'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'key')
-        $row['enabled'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'enabled')
+        if ($tag -is [string]) {
+            $row['key'] = [string]$tag
+        } else {
+            $row['count'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'count')
+            $row['key'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'key')
+            $row['enabled'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'enabled')
+        }
         $row['Group By'] = 'tag'
         $rows.Add($row)
     }
@@ -1056,8 +1086,8 @@ function Get-CostManagementUsageRows {
     foreach ($name in @('project', 'cluster', 'node')) {
         $groups.Add([pscustomobject]@{ Code = $name; Query = ('group_by[{0}]=*' -f $name); Key = $null })
     }
-    $tagResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/tags/openshift/?filter[limit]=100&filter[offset]=0' -Session $Session -Invoke $Invoke -Sleep $Sleep
-    foreach ($key in (Get-CostManagementDistinctKeys -Items (Get-CostManagementJsonField -Object $tagResponse.Json -Name 'data') -Names @('key'))) {
+    $tagItems = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/tags/openshift/'
+    foreach ($key in (Get-CostManagementDistinctKeys -Items $tagItems -Names @('key'))) {
         $groups.Add([pscustomobject]@{ Code = 'tag'; Query = ('group_by[tag:{0}]=*' -f [uri]::EscapeDataString($key)); Key = $key })
     }
     $models = @(
@@ -1082,10 +1112,12 @@ function Get-CostManagementUsageRows {
                 $row['meta.currency'] = $account.Code
                 foreach ($field in @('usage', 'request', 'limit', 'capacity')) {
                     $node = Get-CostManagementJsonField -Object $named.Value -Name $field
-                    if ($row.Contains("values.$field.value")) {
-                        $amount = Get-CostManagementJsonField -Object $node -Name 'value'
-                        if ($null -ne $amount) { $row["values.$field.value"] = $amount }
-                        if ($row.Contains("values.$field.units")) { $row["values.$field.units"] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $node -Name 'units') }
+                    foreach ($part in @('value', 'units', 'unused', 'unused_percent', 'count', 'count_units')) {
+                        $column = "values.$field.$part"
+                        if (-not $row.Contains($column)) { continue }
+                        $partValue = Get-CostManagementJsonField -Object $node -Name $part
+                        if ($null -eq $partValue) { continue }
+                        if ($part -eq 'value') { $row[$column] = $partValue } else { $row[$column] = ConvertTo-CostManagementField $partValue }
                     }
                 }
                 $rows.Add($row)
@@ -1100,12 +1132,12 @@ function Get-CostManagementAwsCostRows {
     $account = Get-CostManagementAccount -Session $Session -ApiBaseUrl $ApiBaseUrl -Invoke $Invoke -Sleep $Sleep
     $groups = New-Object System.Collections.Generic.List[object]
     foreach ($name in @('account', 'service', 'region')) { $groups.Add([pscustomobject]@{ Code = $name; Query = ('group_by[{0}]=*' -f $name); Key = $null }) }
-    $tagResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/tags/aws/?filter[limit]=100&filter[offset]=0' -Session $Session -Invoke $Invoke -Sleep $Sleep
-    foreach ($key in (Get-CostManagementDistinctKeys -Items (Get-CostManagementJsonField -Object $tagResponse.Json -Name 'data') -Names @('key'))) {
+    $tagItems = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/tags/aws/'
+    foreach ($key in (Get-CostManagementDistinctKeys -Items $tagItems -Names @('key'))) {
         $groups.Add([pscustomobject]@{ Code = 'tag'; Query = ('group_by[tag:{0}]=*' -f [uri]::EscapeDataString($key)); Key = $key })
     }
-    $categoryResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/resource-types/aws-categories/?key_only=true' -Session $Session -Invoke $Invoke -Sleep $Sleep
-    foreach ($key in (Get-CostManagementDistinctKeys -Items (Get-CostManagementJsonField -Object $categoryResponse.Json -Name 'data') -Names @('key', 'data'))) {
+    $categoryItems = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/resource-types/aws-categories/?key_only=true'
+    foreach ($key in (Get-CostManagementDistinctKeys -Items $categoryItems -Names @('key', 'data'))) {
         $groups.Add([pscustomobject]@{ Code = 'aws_category'; Query = ('group_by[aws_category:{0}]=*' -f [uri]::EscapeDataString($key)); Key = $key })
     }
     $orgResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/organizations/aws/' -Session $Session -Invoke $Invoke -Sleep $Sleep
@@ -1125,13 +1157,17 @@ function Get-CostManagementAwsCostRows {
 
 function Get-CostManagementCategoryRows {
     param($ApiBaseUrl, $Session, $Invoke, $Sleep, $StartDate, $EndDate)
-    $response = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/resource-types/aws-categories/?key_only=true' -Session $Session -Invoke $Invoke -Sleep $Sleep
+    $items = Get-CostManagementPagedItems -ApiBaseUrl $ApiBaseUrl -Session $Session -Invoke $Invoke -Sleep $Sleep -RelativeUrl '/api/cost-management/v1/resource-types/aws-categories/?key_only=true'
     $rows = New-Object System.Collections.Generic.List[object]
-    foreach ($item in (ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $response.Json -Name 'data'))) {
+    foreach ($item in $items) {
         $row = New-CostManagementRow 'AWS_Cost_Categories'
-        $row['count'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $item -Name 'count')
-        $row['data'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $item -Name 'data')
-        if (-not $row['data']) { $row['data'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $item -Name 'key') }
+        if ($item -is [string]) {
+            $row['data'] = [string]$item
+        } else {
+            $row['count'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $item -Name 'count')
+            $row['data'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $item -Name 'data')
+            if (-not $row['data']) { $row['data'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $item -Name 'key') }
+        }
         $row['Group By'] = 'aws_category'
         $rows.Add($row)
     }
@@ -1162,6 +1198,7 @@ function Get-CostManagementRecommendationRows {
     while ($true) {
         $relative = '/api/cost-management/v1/recommendations/openshift?limit=100&offset=' + $offset
         $response = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
+        if ([int]$response.StatusCode -ne 200) { throw ('status=' + [int]$response.StatusCode) }
         $meta = Get-CostManagementJsonField -Object $response.Json -Name 'meta'
         $countValue = Get-CostManagementJsonField -Object $meta -Name 'count'
         $count = 0

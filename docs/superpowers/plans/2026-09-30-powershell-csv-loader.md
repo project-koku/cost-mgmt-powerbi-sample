@@ -607,17 +607,17 @@ git commit -m "Flatten OpenShift cost rows without failing on nulls."
 Dataset behavior:
 
 - `Data_Period`: columns `Start Date`, `End Date`, one row per export window, dates `yyyy-MM-dd`. A later run keeps earlier windows and stores the same start and end once. Written even when `-Dataset` names another id.
-- `Default_Master_Settings`: `GET /api/cost-management/v1/currency/` and `GET /api/cost-management/v1/account-settings/`. Join on currency code. Each run replaces the file.
+- `Default_Master_Settings`: `GET /api/cost-management/v1/currency/` and `GET /api/cost-management/v1/account-settings/`. Join on currency code. Replace the file only when the catalog returns HTTP 200 and includes that code. Otherwise keep the previous file.
 - `OS_Costs_Daily`: for group codes `project`, `cluster`, `node`, and each key from `GET /api/cost-management/v1/tags/openshift/`, call `/api/cost-management/v1/reports/openshift/costs/` with `currency`, `filter[resolution]=daily`, `start_date`, `end_date`, `filter[limit]=100`, `filter[offset]`, and `group_by[<code>]=*` or `group_by[tag:<key>]=*`. Request one calendar month at a time. Flatten each nested value with `ConvertTo-OpenShiftCostRow`. `date` is that value's day.
-- `OS_Tag_Keys`: tags endpoint, columns `count`, `key`, `enabled`, and `Group By` set to `tag`. Each run replaces the file.
+- `OS_Tag_Keys`: tags endpoint, paged with `filter[limit]` and `filter[offset]`. Columns `count`, `key`, `enabled`, and `Group By` set to `tag`. HTTP 200 replaces the file. Any other status keeps the previous file.
 - `OS_Cost_Project_Tags`: for each distinct project, `GET /api/cost-management/v1/tags/openshift/?filter[project]=...` once. Write the tags once per calendar month in the window. `date` is the first of that month. `Filter Month` is that month's year, a hyphen, and the month number without a leading zero. September 2026 writes `2026-9`. The test asserts that exact string. `2026-09` fails. A later run replaces a month when the new window overlaps it.
 - `OS_Cost_Cluster_Projects`: for each distinct cluster, costs grouped by project. `date` and `Filter Month` come from each value's day. `value` null becomes `0`, matching the workbook's replace step. Drop rows whose project is null.
-- `OS_Daily_Usage`: usage models `compute` (Usage Code `cpu`), `memory`, `volumes` (Usage Code `volume`). Endpoints `/api/cost-management/v1/reports/openshift/<model>/`. Group by project, cluster, node, and tag key. `date` is each value's day.
+- `OS_Daily_Usage`: usage models `compute` (Usage Code `cpu`), `memory`, `volumes` (Usage Code `volume`). Endpoints `/api/cost-management/v1/reports/openshift/<model>/`. Group by project, cluster, node, and tag key. `date` is each value's day. Copy `value`, `units`, `unused`, `unused_percent`, `count`, and `count_units` when the schema has that column.
 - `AWS_Daily_Costs`: `/api/cost-management/v1/reports/aws/costs/` grouped by `account`, `service`, `region`, each AWS tag, each cost category (`aws_category:<key>`), and each org unit. Same null rules and per-day `date` as OpenShift. `ConvertTo-AwsCostRow` fills the AWS header, including `values.account_alias`, `key`, `type`, and `values.alias`.
 - `AWS_Tag_Keys`: `/api/cost-management/v1/tags/aws/`.
-- `AWS_Cost_Categories`: `/api/cost-management/v1/resource-types/aws-categories/?key_only=true`.
+- `AWS_Cost_Categories`: `/api/cost-management/v1/resource-types/aws-categories/?key_only=true`. A string in `data` is the category name.
 - `AWS_Org_Units`: `/api/cost-management/v1/organizations/aws/`.
-- `Recommendations`: page `GET /api/cost-management/v1/recommendations/openshift` with `limit` and `offset`. One CSV row per recommendation. Short, medium, and long term recommendation objects map onto the `ST`, `MT`, and `LT` columns. A missing term leaves those columns empty.
+- `Recommendations`: page `GET /api/cost-management/v1/recommendations/openshift` with `limit` and `offset`. One CSV row per recommendation. Short, medium, and long term recommendation objects map onto the `ST`, `MT`, and `LT` columns. A missing term leaves those columns empty. A non-200 keeps the previous file.
 
 `export.log` lines look like `OS_Costs_Daily 2026-09-01 2026-09-01 offset=0 status=500`. Do not write response bodies that contain an `Authorization` header. Strip that header if a body is logged.
 

@@ -778,6 +778,118 @@ Assert-True 'currency miss keeps description' ($currencyMissRow.description -eq 
 Assert-True 'currency miss logs status' ($currencyMissLog -match 'status=200' -and $currencyMissLog -match 'currency catalog has no match')
 Remove-Item $currencyMissDir -Recurse -Force
 
+$usagePq = Get-Content -Raw (Join-Path $PSScriptRoot '..\PowerBI\OS_Daily_Usage.pq')
+$awsPq = Get-Content -Raw (Join-Path $PSScriptRoot '..\PowerBI\AWS_Daily_Costs.pq')
+$osCostPq = Get-Content -Raw (Join-Path $PSScriptRoot '..\PowerBI\OS_Costs_Daily.pq')
+$recommendationPq = Get-Content -Raw (Join-Path $PSScriptRoot '..\PowerBI\Recommendations.pq')
+Assert-True 'usage capacity imports as a decimal' ($usagePq.Contains('"values.capacity.value", type number') -and $usagePq.Contains('"values.capacity.count", type number'))
+Assert-True 'aws usage imports as a decimal' ($awsPq.Contains('"values.infrastructure.usage.value", type number') -and $awsPq.Contains('"values.cost.usage.value", type number') -and $awsPq.Contains('"values.supplementary.total.value", type number'))
+Assert-True 'openshift supplementary imports as a decimal' ($osCostPq.Contains('"values.supplementary.raw.value", type number') -and $osCostPq.Contains('"values.supplementary.markup.value", type number'))
+Assert-True 'recommendation duration imports as a decimal' ($recommendationPq.Contains('"st.duration_in_hours", type number') -and $recommendationPq.Contains('"source_id", type text'))
+
+$capacityDir = Join-Path $env:TEMP ("cm-capacity-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $capacityDir | Out-Null
+$capacityInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('/tags/openshift/')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' } }
+    if ($u.Contains('/reports/openshift/compute/') -and $u.Contains('group_by[project]')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-09-02'; projects = @(@{ project = 'web'; values = @(@{ date = '2026-09-02'; request = @{ unused = 0.5; unused_percent = 10 }; capacity = @{ value = 2.5; units = 'cores'; unused = 1.25; unused_percent = 20; count = 3.5; count_units = 'cores' } }) }) }) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $capacityDir -Dataset 'OS_Daily_Usage' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $capacityInvoke -Now { Get-Date } -Sleep { }
+$capacityRow = @(Import-Csv (Join-Path $capacityDir 'OS_Daily_Usage.csv')) | Where-Object { $_.'Usage Name' -eq 'compute' } | Select-Object -First 1
+Assert-True 'usage keeps capacity count' ($capacityRow.'values.capacity.value' -eq '2.5' -and $capacityRow.'values.capacity.count' -eq '3.5' -and $capacityRow.'values.capacity.count_units' -eq 'cores' -and $capacityRow.'values.capacity.unused' -eq '1.25' -and $capacityRow.'values.request.unused' -eq '0.5')
+Remove-Item $capacityDir -Recurse -Force
+
+$categoryDir = Join-Path $env:TEMP ("cm-category-strings-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $categoryDir | Out-Null
+$categoryInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u.Contains('/aws-categories/')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @('Env', 'Team'); meta = @{ count = 2 } }; Body = '' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $categoryDir -Dataset 'AWS_Cost_Categories' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $categoryInvoke -Now { Get-Date } -Sleep { }
+$categoryRows = @(Import-Csv (Join-Path $categoryDir 'AWS_Cost_Categories.csv'))
+Assert-True 'category strings fill data' ((@($categoryRows | Where-Object { $_.data -eq 'Env' })).Count -eq 1 -and (@($categoryRows | Where-Object { $_.data -eq 'Team' })).Count -eq 1)
+Remove-Item $categoryDir -Recurse -Force
+
+$script:TagFirstPage = New-Object System.Collections.Generic.List[object]
+1..100 | ForEach-Object { $script:TagFirstPage.Add(@{ key = ('k' + $_); enabled = $true }) }
+$tagPageDir = Join-Path $env:TEMP ("cm-tag-pages-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $tagPageDir | Out-Null
+$tagPageInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u.Contains('/tags/openshift/') -and $u.Contains('filter[offset]=0')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = $script:TagFirstPage; meta = @{ count = 101 } }; Body = '' } }
+    if ($u.Contains('/tags/openshift/') -and $u.Contains('filter[offset]=100')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ key = 'last'; enabled = $true }); meta = @{ count = 101 } }; Body = '' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $tagPageDir -Dataset 'OS_Tag_Keys' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $tagPageInvoke -Now { Get-Date } -Sleep { }
+$tagPageRows = @(Import-Csv (Join-Path $tagPageDir 'OS_Tag_Keys.csv'))
+Assert-True 'tag keys read the next page' ((@($tagPageRows | Where-Object { $_.key -eq 'k1' })).Count -eq 1 -and (@($tagPageRows | Where-Object { $_.key -eq 'last' })).Count -eq 1)
+Remove-Item $tagPageDir -Recurse -Force
+
+$tagFailDir = Join-Path $env:TEMP ("cm-tag-fail-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $tagFailDir | Out-Null
+$keptTag = New-CostManagementRow 'OS_Tag_Keys'
+$keptTag['key'] = 'keep'
+$keptTag['Group By'] = 'tag'
+Write-CostManagementCsv -Path (Join-Path $tagFailDir 'OS_Tag_Keys.csv') -Header (Get-CostManagementSchemaHeader 'OS_Tag_Keys') -Rows @($keptTag)
+$tagFailInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u.Contains('/tags/openshift/')) { return [pscustomobject]@{ StatusCode = 404; Json = $null; Body = 'missing' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+$tagFailThrew = $false
+try {
+    Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $tagFailDir -Dataset 'OS_Tag_Keys' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $tagFailInvoke -Now { Get-Date } -Sleep { }
+} catch {
+    $tagFailThrew = $true
+}
+$tagFailRow = Import-Csv (Join-Path $tagFailDir 'OS_Tag_Keys.csv')
+$tagFailLog = ''
+if (Test-Path (Join-Path $tagFailDir 'export.log')) { $tagFailLog = Get-Content -Raw (Join-Path $tagFailDir 'export.log') }
+Assert-True 'tag http failure fails the dataset' $tagFailThrew
+Assert-True 'tag http failure keeps the key' ($tagFailRow.key -eq 'keep')
+Assert-True 'tag http failure logs status' ($tagFailLog -match 'status=404')
+Remove-Item $tagFailDir -Recurse -Force
+
+$recommendationFailDir = Join-Path $env:TEMP ("cm-rec-fail-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $recommendationFailDir | Out-Null
+$keptRecommendation = New-CostManagementRow 'Recommendations'
+$keptRecommendation['cluster_uuid'] = 'keep-cluster'
+Write-CostManagementCsv -Path (Join-Path $recommendationFailDir 'Recommendations.csv') -Header (Get-CostManagementSchemaHeader 'Recommendations') -Rows @($keptRecommendation)
+$recommendationFailInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u.Contains('/recommendations/openshift')) { return [pscustomobject]@{ StatusCode = 404; Json = $null; Body = 'missing' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+$recommendationFailThrew = $false
+try {
+    Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-30' -ClientId 'id' -ClientSecret 'secret' -OutDir $recommendationFailDir -Dataset 'Recommendations' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $recommendationFailInvoke -Now { Get-Date } -Sleep { }
+} catch {
+    $recommendationFailThrew = $true
+}
+$recommendationFailRow = Import-Csv (Join-Path $recommendationFailDir 'Recommendations.csv')
+$recommendationFailLog = ''
+if (Test-Path (Join-Path $recommendationFailDir 'export.log')) { $recommendationFailLog = Get-Content -Raw (Join-Path $recommendationFailDir 'export.log') }
+Assert-True 'recommendation http failure fails the dataset' $recommendationFailThrew
+Assert-True 'recommendation http failure keeps the row' ($recommendationFailRow.cluster_uuid -eq 'keep-cluster')
+Assert-True 'recommendation http failure logs status' ($recommendationFailLog -match 'status=404')
+Remove-Item $recommendationFailDir -Recurse -Force
+
 if ($script:Failed -gt 0) { exit 1 }
 Write-Host "ALL PASS"
 exit 0
