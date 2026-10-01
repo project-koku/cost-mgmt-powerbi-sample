@@ -84,7 +84,11 @@ Set the window on the export, then refresh `PowerBI/CostManagement.pbix`:
 powershell.exe -File scripts/Export-CostManagement.ps1 -StartDate 2026-08-01 -EndDate 2026-09-30
 ```
 
-Dates use `yyyy-MM-dd`. Refresh after the script exits 0. The Period lists update from the new `Data_Period` rows on that refresh.
+Dates use `yyyy-MM-dd`. Refresh after the script exits 0. The Period lists update from the `Data_Period` rows on that refresh.
+
+Each run adds one `Data_Period` row for that window. A window that is already listed stays once. Earlier windows stay, so the calendar runs from the earliest start through the latest end already on disk. Delete `Data_Period.csv` to start the calendar over.
+
+Daily cost, usage, and cluster-project rows keep the day they belong to. A later run replaces only rows whose day is inside the new window. Project tags are stored once per month, dated the first of that month. A later run replaces a month's tags when the new window overlaps that month. Delete a dataset CSV to drop its history. Settings, tag-key lists, cost categories, org units, and recommendations are replaced in full on each run.
 
 ### OpenShift, Cost overview, and Amazon Web Services
 

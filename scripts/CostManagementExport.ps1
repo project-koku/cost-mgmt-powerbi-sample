@@ -66,7 +66,7 @@ function Write-CostManagementCsv {
     param(
         [string]$Path,
         [string[]]$Header,
-        [object[]]$Rows
+        $Rows
     )
     $directory = Split-Path -Parent $Path
     if ($directory -and -not (Test-Path -LiteralPath $directory)) {
@@ -82,7 +82,7 @@ function Write-CostManagementCsv {
     if ($Rows -is [System.Collections.IDictionary]) {
         $recordList.Add($Rows)
     } elseif ($null -ne $Rows) {
-        foreach ($item in @($Rows)) {
+        foreach ($item in $Rows) {
             if ($null -ne $item) { $recordList.Add($item) }
         }
     }
@@ -423,6 +423,27 @@ function Invoke-CostManagementGet {
     }
 }
 
+function Get-CostManagementMonthWindows {
+    param(
+        [datetime]$StartDate,
+        [datetime]$EndDate
+    )
+    $start = $StartDate.Date
+    $end = $EndDate.Date
+    $windows = New-Object System.Collections.Generic.List[object]
+    if ($end -ge $start) {
+        $cursor = $start
+        while ($cursor -le $end) {
+            $monthStart = New-Object System.DateTime $cursor.Year, $cursor.Month, 1
+            $monthEnd = $monthStart.AddMonths(1).AddDays(-1)
+            if ($monthEnd -gt $end) { $monthEnd = $end }
+            $windows.Add([pscustomobject]@{ StartDate = $cursor; EndDate = $monthEnd })
+            $cursor = $monthEnd.AddDays(1)
+        }
+    }
+    Write-Output -NoEnumerate $windows
+}
+
 function Get-CostManagementWindowData {
     param(
         [datetime]$StartDate,
@@ -433,6 +454,17 @@ function Get-CostManagementWindowData {
         [scriptblock]$Invoke,
         [scriptblock]$Sleep
     )
+    $months = Get-CostManagementMonthWindows -StartDate $StartDate -EndDate $EndDate
+    if ($months.Count -gt 1) {
+        $combined = New-Object System.Collections.Generic.List[object]
+        foreach ($month in $months) {
+            $part = @(Get-CostManagementWindowData -StartDate $month.StartDate -EndDate $month.EndDate -ApiBaseUrl $ApiBaseUrl -RelativeUrl $RelativeUrl -Session $Session -Invoke $Invoke -Sleep $Sleep)
+            foreach ($item in $part) {
+                if ($null -ne $item) { $combined.Add($item) }
+            }
+        }
+        return ,$combined.ToArray()
+    }
     try {
         $rows = New-Object System.Collections.Generic.List[object]
         $offset = 0
@@ -533,7 +565,7 @@ function Publish-CostManagementDataset {
     }
     $partial = Join-Path $partialDir ($DatasetId + '.csv')
     $final = Join-Path $OutDir ($DatasetId + '.csv')
-    Write-CostManagementCsv -Path $partial -Header $Header -Rows @($Rows)
+    Write-CostManagementCsv -Path $partial -Header $Header -Rows $Rows
     Move-Item -LiteralPath $partial -Destination $final -Force
 }
 
@@ -637,22 +669,160 @@ function Get-CostManagementDistinctKeys {
     Write-Output -NoEnumerate $keys
 }
 
+function Get-CostManagementGroupArrayName {
+    param([string]$GroupName)
+    switch ($GroupName) {
+        'org_unit_id' { return 'org_entities' }
+        'aws_category' { return 'aws_categories' }
+        default { return ($GroupName + 's') }
+    }
+}
+
+function Add-CostManagementNamedValue {
+    param($List, $Item, [string]$GroupName)
+    $name = [string](Get-CostManagementJsonField -Object $Item -Name $GroupName)
+    if (-not $name) { $name = [string](Get-CostManagementJsonField -Object $Item -Name 'name') }
+    $values = ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $Item -Name 'values')
+    if ($values.Count -eq 0) {
+        $List.Add([pscustomobject]@{ Name = $name; Value = $Item })
+    } else {
+        foreach ($value in $values) {
+            $List.Add([pscustomobject]@{ Name = $name; Value = $value })
+        }
+    }
+}
+
 function Get-CostManagementNamedValues {
     param($Items, [string]$GroupName)
     $list = New-Object System.Collections.Generic.List[object]
+    $arrayName = Get-CostManagementGroupArrayName $GroupName
     foreach ($item in (ConvertTo-CostManagementItemList $Items)) {
-        $name = [string](Get-CostManagementJsonField -Object $item -Name $GroupName)
-        if (-not $name) { $name = [string](Get-CostManagementJsonField -Object $item -Name 'name') }
-        $values = ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $item -Name 'values')
-        if ($values.Count -eq 0) {
-            $list.Add([pscustomobject]@{ Name = $name; Value = $item })
-        } else {
-            foreach ($value in $values) {
-                $list.Add([pscustomobject]@{ Name = $name; Value = $value })
+        $nested = Get-CostManagementJsonField -Object $item -Name $arrayName
+        if ($null -ne $nested) {
+            foreach ($group in (ConvertTo-CostManagementItemList $nested)) {
+                Add-CostManagementNamedValue -List $list -Item $group -GroupName $GroupName
             }
+            continue
+        }
+        $directName = Get-CostManagementJsonField -Object $item -Name $GroupName
+        $directValues = Get-CostManagementJsonField -Object $item -Name 'values'
+        $fallbackName = Get-CostManagementJsonField -Object $item -Name 'name'
+        if ($null -ne $directName -or $null -ne $directValues -or $null -ne $fallbackName) {
+            Add-CostManagementNamedValue -List $list -Item $item -GroupName $GroupName
         }
     }
     return $list
+}
+
+function Get-CostManagementValueDate {
+    param($ValueRecord)
+    $raw = Get-CostManagementJsonField -Object $ValueRecord -Name 'date'
+    if ($null -eq $raw) { return '' }
+    $text = [string]$raw
+    if ($text -match '^\d{4}-\d{2}-\d{2}') { return $text.Substring(0, 10) }
+    return ''
+}
+
+function ConvertTo-CostManagementDay {
+    param([string]$Text)
+    if ($Text -notmatch '^(\d{4})-(\d{2})-(\d{2})') { return $null }
+    return (Get-Date -Year ([int]$Matches[1]) -Month ([int]$Matches[2]) -Day ([int]$Matches[3])).Date
+}
+
+function Test-CostManagementDayInWindow {
+    param([string]$Text, [datetime]$StartDate, [datetime]$EndDate)
+    $day = ConvertTo-CostManagementDay $Text
+    if ($null -eq $day) { return $false }
+    return ($day -ge $StartDate.Date -and $day -le $EndDate.Date)
+}
+
+function Test-CostManagementMonthOverlap {
+    param([string]$Text, [datetime]$StartDate, [datetime]$EndDate)
+    $day = ConvertTo-CostManagementDay $Text
+    if ($null -eq $day) { return $false }
+    $monthStart = New-Object System.DateTime $day.Year, $day.Month, 1
+    $monthEnd = $monthStart.AddMonths(1).AddDays(-1)
+    return ($monthStart -le $EndDate.Date -and $monthEnd -ge $StartDate.Date)
+}
+
+function Get-CostManagementMergeMode {
+    param([string]$DatasetId)
+    switch ($DatasetId) {
+        'OS_Costs_Daily' { return 'day' }
+        'AWS_Daily_Costs' { return 'day' }
+        'OS_Daily_Usage' { return 'day' }
+        'OS_Cost_Cluster_Projects' { return 'day' }
+        'OS_Cost_Project_Tags' { return 'month' }
+        'Data_Period' { return 'window' }
+        default { return 'replace' }
+    }
+}
+
+function Read-CostManagementCsvRows {
+    param([string]$Path, [string[]]$Header)
+    $rows = New-Object System.Collections.Generic.List[object]
+    if (-not (Test-Path -LiteralPath $Path)) { Write-Output -NoEnumerate $rows; return }
+    $imported = @(Import-Csv -LiteralPath $Path)
+    foreach ($item in $imported) {
+        if ($null -eq $item) { continue }
+        $row = [ordered]@{}
+        foreach ($name in $Header) {
+            $value = $item.$name
+            if ($null -eq $value) { $row[$name] = '' } else { $row[$name] = [string]$value }
+        }
+        $rows.Add($row)
+    }
+    Write-Output -NoEnumerate $rows
+}
+
+function Merge-CostManagementRows {
+    param(
+        [string]$DatasetId,
+        $Existing,
+        $NewRows,
+        [datetime]$StartDate,
+        [datetime]$EndDate
+    )
+    $mode = Get-CostManagementMergeMode $DatasetId
+    $merged = New-Object System.Collections.Generic.List[object]
+    $existingRows = ConvertTo-CostManagementItemList $Existing
+    $incoming = ConvertTo-CostManagementItemList $NewRows
+    if ($mode -eq 'replace') {
+        foreach ($row in $incoming) { if ($null -ne $row) { $merged.Add($row) } }
+        Write-Output -NoEnumerate $merged
+        return
+    }
+    if ($mode -eq 'window') {
+        $startText = $StartDate.ToString('yyyy-MM-dd')
+        $endText = $EndDate.ToString('yyyy-MM-dd')
+        $seen = $false
+        foreach ($row in $existingRows) {
+            if ($null -eq $row) { continue }
+            if ([string]$row['Start Date'] -eq $startText -and [string]$row['End Date'] -eq $endText) {
+                if (-not $seen) {
+                    foreach ($newRow in $incoming) { if ($null -ne $newRow) { $merged.Add($newRow) } }
+                    $seen = $true
+                }
+            } else {
+                $merged.Add($row)
+            }
+        }
+        if (-not $seen) {
+            foreach ($newRow in $incoming) { if ($null -ne $newRow) { $merged.Add($newRow) } }
+        }
+        Write-Output -NoEnumerate $merged
+        return
+    }
+    foreach ($row in $existingRows) {
+        if ($null -eq $row) { continue }
+        $text = [string]$row['date']
+        $drop = $false
+        if ($mode -eq 'day') { $drop = Test-CostManagementDayInWindow -Text $text -StartDate $StartDate -EndDate $EndDate }
+        if ($mode -eq 'month') { $drop = Test-CostManagementMonthOverlap -Text $text -StartDate $StartDate -EndDate $EndDate }
+        if (-not $drop) { $merged.Add($row) }
+    }
+    foreach ($row in $incoming) { if ($null -ne $row) { $merged.Add($row) } }
+    Write-Output -NoEnumerate $merged
 }
 
 function ConvertTo-AwsCostRow {
@@ -708,7 +878,10 @@ function Export-CostManagementData {
     $period = New-CostManagementRow 'Data_Period'
     $period['Start Date'] = $start.ToString('yyyy-MM-dd')
     $period['End Date'] = $end.ToString('yyyy-MM-dd')
-    Publish-CostManagementDataset -OutDir $OutDir -DatasetId 'Data_Period' -Header (Get-CostManagementSchemaHeader 'Data_Period') -Rows @($period)
+    $periodHeader = Get-CostManagementSchemaHeader 'Data_Period'
+    $existingPeriod = Read-CostManagementCsvRows -Path (Join-Path $OutDir 'Data_Period.csv') -Header $periodHeader
+    $periodRows = Merge-CostManagementRows -DatasetId 'Data_Period' -Existing $existingPeriod -NewRows @($period) -StartDate $start -EndDate $end
+    Publish-CostManagementDataset -OutDir $OutDir -DatasetId 'Data_Period' -Header $periodHeader -Rows $periodRows
 
     $requested = @()
     if ($Dataset) { $requested = @($Dataset) } else { $requested = @(Get-CostManagementDatasetIds) }
@@ -716,7 +889,10 @@ function Export-CostManagementData {
         if ($datasetId -eq 'Data_Period') { continue }
         try {
             $rows = @(Get-CostManagementDatasetRows -DatasetId $datasetId -StartDate $start -EndDate $end -ApiBaseUrl $ApiBaseUrl -Session $session -Invoke $Invoke -Sleep $Sleep)
-            Publish-CostManagementDataset -OutDir $OutDir -DatasetId $datasetId -Header (Get-CostManagementSchemaHeader $datasetId) -Rows $rows
+            $header = Get-CostManagementSchemaHeader $datasetId
+            $existing = Read-CostManagementCsvRows -Path (Join-Path $OutDir ($datasetId + '.csv')) -Header $header
+            $merged = Merge-CostManagementRows -DatasetId $datasetId -Existing $existing -NewRows $rows -StartDate $start -EndDate $end
+            Publish-CostManagementDataset -OutDir $OutDir -DatasetId $datasetId -Header $header -Rows $merged
         } catch {
             $status = '500'
             if ([string]$_.Exception.Message -match 'status=(\d+)') { $status = $Matches[1] }
@@ -778,7 +954,7 @@ function Get-CostManagementOpenShiftCostRows {
         $relative = '/api/cost-management/v1/reports/openshift/costs/?currency=' + [uri]::EscapeDataString($account.Code) + '&filter[resolution]=daily&' + $group.Query
         $items = Get-CostManagementWindowData -StartDate $StartDate -EndDate $EndDate -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
         foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName $(if ($group.Code -eq 'tag') { 'tag' } else { $group.Code }))) {
-            $rows.Add((ConvertTo-OpenShiftCostRow -CurrencyCode $account.Code -GroupByCode $group.Code -DistributedOverhead $false -Day $StartDate.ToString('yyyy-MM-dd') -Name $named.Name -ValueRecord $named.Value -TagKey $group.Key))
+            $rows.Add((ConvertTo-OpenShiftCostRow -CurrencyCode $account.Code -GroupByCode $group.Code -DistributedOverhead $false -Day (Get-CostManagementValueDate -ValueRecord $named.Value) -Name $named.Name -ValueRecord $named.Value -TagKey $group.Key))
         }
     }
     return $rows
@@ -793,21 +969,27 @@ function Get-CostManagementProjectTagRows {
     foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName 'project')) {
         if ($named.Name -and -not $projects.Contains($named.Name)) { $projects.Add($named.Name) }
     }
-    $month = Get-CostManagementFilterMonth $EndDate
+    $months = Get-CostManagementMonthWindows -StartDate $StartDate -EndDate $EndDate
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($project in $projects) {
         $tagUrl = '/api/cost-management/v1/tags/openshift/?filter[project]=' + [uri]::EscapeDataString($project) + '&filter[limit]=100&filter[offset]=0'
         $tagResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl $tagUrl -Session $Session -Invoke $Invoke -Sleep $Sleep
-        foreach ($tag in (ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $tagResponse.Json -Name 'data'))) {
-            $row = New-CostManagementRow 'OS_Cost_Project_Tags'
-            $row['code'] = $account.Code
-            $row['date'] = $EndDate.ToString('yyyy-MM-dd')
-            $row['project'] = $project
-            $row['key'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'key')
-            $row['values'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'values')
-            $row['enabled'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'enabled')
-            $row['Filter Month'] = $month
-            $rows.Add($row)
+        $tags = ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $tagResponse.Json -Name 'data')
+        foreach ($month in $months) {
+            $first = Get-Date -Year $month.StartDate.Year -Month $month.StartDate.Month -Day 1
+            $monthLabel = Get-CostManagementFilterMonth $first
+            foreach ($tag in $tags) {
+                if ($null -eq $tag) { continue }
+                $row = New-CostManagementRow 'OS_Cost_Project_Tags'
+                $row['code'] = $account.Code
+                $row['date'] = $first.ToString('yyyy-MM-dd')
+                $row['project'] = $project
+                $row['key'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'key')
+                $row['values'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'values')
+                $row['enabled'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object $tag -Name 'enabled')
+                $row['Filter Month'] = $monthLabel
+                $rows.Add($row)
+            }
         }
     }
     return $rows
@@ -847,15 +1029,16 @@ function Get-CostManagementClusterProjectRows {
             if (-not $named.Name) { continue }
             $amount = Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $named.Value -Name 'cost') -Name 'total') -Name 'value'
             if ($null -eq $amount) { $amount = 0 }
+            $dayText = Get-CostManagementValueDate -ValueRecord $named.Value
             $row = New-CostManagementRow 'OS_Cost_Cluster_Projects'
             $row['code'] = $account.Code
             $row['Group By Code'] = 'project'
             $row['cluster'] = $cluster
-            $row['date'] = $EndDate.ToString('yyyy-MM-dd')
+            $row['date'] = $dayText
             $row['project'] = $named.Name
             $row['value'] = $amount
             $row['units'] = ConvertTo-CostManagementField (Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object (Get-CostManagementJsonField -Object $named.Value -Name 'cost') -Name 'total') -Name 'units')
-            $row['Filter Month'] = Get-CostManagementFilterMonth $EndDate
+            if ($dayText) { $row['Filter Month'] = Get-CostManagementFilterMonth (ConvertTo-CostManagementDate $dayText) }
             $rows.Add($row)
         }
     }
@@ -890,7 +1073,7 @@ function Get-CostManagementUsageRows {
                 $row['Usage Code'] = $model.Code
                 $row['Usage Name'] = $model.Name
                 $row['Key'] = ConvertTo-CostManagementField $group.Key
-                $row['date'] = $StartDate.ToString('yyyy-MM-dd')
+                $row['date'] = Get-CostManagementValueDate -ValueRecord $named.Value
                 $row['Name'] = $named.Name
                 $row['meta.currency'] = $account.Code
                 foreach ($field in @('usage', 'request', 'limit', 'capacity')) {
@@ -930,7 +1113,7 @@ function Get-CostManagementAwsCostRows {
         $relative = '/api/cost-management/v1/reports/aws/costs/?currency=' + [uri]::EscapeDataString($account.Code) + '&filter[resolution]=daily&' + $group.Query
         $items = Get-CostManagementWindowData -StartDate $StartDate -EndDate $EndDate -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
         foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName $group.Code)) {
-            $rows.Add((ConvertTo-AwsCostRow -ValueRecord $named.Value -CurrencyCode $account.Code -CostType $account.CostType -GroupByCode $group.Code -Day $StartDate.ToString('yyyy-MM-dd') -Name $named.Name -TagKey $group.Key))
+            $rows.Add((ConvertTo-AwsCostRow -ValueRecord $named.Value -CurrencyCode $account.Code -CostType $account.CostType -GroupByCode $group.Code -Day (Get-CostManagementValueDate -ValueRecord $named.Value) -Name $named.Name -TagKey $group.Key))
         }
     }
     return $rows

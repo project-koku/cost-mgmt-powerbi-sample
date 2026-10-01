@@ -203,9 +203,15 @@ OpenShift cost group-bys: project, cluster, node, and each tag key. AWS cost gro
 
 Each cost or usage request sends `currency` from account settings, `filter[resolution]=daily`, `start_date`, `end_date`, `filter[limit]`, and `filter[offset]`. Page size is 100. The script reads `meta.count` from JSON and stops when the next offset is greater than or equal to that count. An empty `data` array ends the loop even if `meta.count` is missing.
 
-A page is retried up to 3 times on HTTP 429 or 5xx, with a pause of 2 seconds, then 4, then 8. If the page still fails and the date window is more than one day, the script splits that window into two contiguous halves and downloads each half. A failed single-day window fails the dataset.
+Cost and usage windows are downloaded one calendar month at a time. 1 August 2026 through 5 September 2026 is requested as 1 August through 31 August, then 1 September through 5 September. A start or end that falls inside a month is kept. Inside a month, a page is retried up to 3 times on HTTP 429 or 5xx, with a pause of 2 seconds, then 4, then 8. If the page still fails and that month is more than one day, the script splits it into two contiguous halves and downloads each half. A failed single-day window fails the dataset. An HTTP 400 is not split.
 
 ## Flattening and nulls
+
+A cost or usage report is nested. Each `data` item is a day. That day contains the group array: `projects`, `clusters`, `nodes`, `tags`, `accounts`, `services`, `regions`, `aws_categories`, or `org_entities`. Each group contains `values`. The script writes one CSV row per value.
+
+`date` is that value's own day for OpenShift costs, AWS costs, usage, and cluster projects. `values.date` stays the API value. OpenShift costs, AWS costs, and usage do not write `Filter Month`; Power BI derives it from `date`. Cluster-project rows write `Filter Month` from that same day: the year, a hyphen, and the month number with no leading zero. 15 August 2026 is `2026-8`. `2026-08` is wrong.
+
+Project tags are written once per calendar month in the window, not once per day. The tag list is requested once per project. `date` is the first day of that month, including when the window starts later in the month. `Filter Month` uses the same year-hyphen-month form. A window from 1 August 2026 through 5 September 2026 writes `2026-8` on `2026-08-01` and `2026-9` on `2026-09-01`. A window of only September 2026 still writes `2026-9`.
 
 Nested cost objects are expanded to the same dotted column names the workbooks produce, including `values.cost.total.value` and the infrastructure and supplementary value/unit pairs.
 
@@ -213,28 +219,26 @@ List fields, including `source_uuid` and `clusters`, are joined with a comma. A 
 
 Numbers stay numbers in the CSV. Dates are `yyyy-MM-dd`.
 
-`OS_Cost_Project_Tags` writes `Filter Month` from `-EndDate`: the year, a hyphen, and the month number with no leading zero. For 30 September 2026 the field is `2026-9`. `2026-09` is wrong. The unit test uses end date `2026-09-30` and requires the exact characters `2026-9`.
-
 ## CSV outputs
 
 Files are UTF-8 with a byte order mark, so Excel can open them if someone double-clicks a file. The header row is always written, including when the account has zero rows.
 
 API-backed files, written under `data/export/`:
 
-| File | Replaces |
+| File | What a run writes |
 | --- | --- |
-| `Data_Period.csv` | The date window of this run |
-| `Default_Master_Settings.csv` | Currency description and cost type |
-| `OS_Costs_Daily.csv` | Daily OpenShift costs for every group-by |
-| `OS_Cost_Project_Tags.csv` | Tags on each project |
-| `OS_Cost_Cluster_Projects.csv` | Projects on each cluster |
-| `OS_Tag_Keys.csv` | OpenShift tag keys |
-| `OS_Daily_Usage.csv` | Daily usage for each group-by and usage model |
-| `AWS_Daily_Costs.csv` | Daily AWS costs for every group-by |
-| `AWS_Tag_Keys.csv` | AWS tag keys |
-| `AWS_Cost_Categories.csv` | AWS cost categories |
-| `AWS_Org_Units.csv` | AWS org units |
-| `Recommendations.csv` | OpenShift recommendations, short, medium, and long term on one row per recommendation |
+| `Data_Period.csv` | One row per export window. A later run adds a window and keeps earlier windows. The same start and end are stored once. |
+| `Default_Master_Settings.csv` | Currency description and cost type, replacing the file |
+| `OS_Costs_Daily.csv` | Daily OpenShift costs. A later run replaces rows whose `date` is inside the new window and keeps the other days. |
+| `OS_Cost_Project_Tags.csv` | Project tags once per month. A later run replaces a month when the new window overlaps that month. |
+| `OS_Cost_Cluster_Projects.csv` | One row per project day on each cluster. A later run replaces days inside the new window. |
+| `OS_Tag_Keys.csv` | OpenShift tag keys, replacing the file |
+| `OS_Daily_Usage.csv` | Daily usage. A later run replaces days inside the new window. |
+| `AWS_Daily_Costs.csv` | Daily AWS costs. A later run replaces days inside the new window. |
+| `AWS_Tag_Keys.csv` | AWS tag keys, replacing the file |
+| `AWS_Cost_Categories.csv` | AWS cost categories, replacing the file |
+| `AWS_Org_Units.csv` | AWS org units, replacing the file |
+| `Recommendations.csv` | OpenShift recommendations, replacing the file |
 
 A dataset is written to `data/export/.partial/` and moved into `data/export/` only after every page for that dataset succeeds. A failed dataset leaves the previous CSV in place.
 
@@ -330,6 +334,9 @@ Assertions:
 - A window that fails once and then succeeds on each half is concatenated in date order with one header row.
 - A run with a non-default `-ApiBaseUrl` requests `https://cost.example.com/api/cost-management/v1/...` and sends the token request only to the configured `-TokenUrl`.
 - `OS_Cost_Project_Tags` for end date `2026-09-30` writes `Filter Month` as `2026-9`.
+- A nested cost page with an August value and a September value writes both days. The requests are 1 August through 31 August and 1 September through 5 September.
+- Project tags for 1 August 2026 through 5 September 2026 write `2026-8` on `2026-08-01` and `2026-9` on `2026-09-01`.
+- A later run keeps fact rows outside the new window, replaces project-tag months the window overlaps, and keeps earlier `Data_Period` windows. Settings stay one replaced row.
 - `data/static/Project_Overhead_Cost_Types.csv` contains `Don't distribute  overhead costs` with two spaces.
 
 A live run against a service account is a manual check: currency, account settings, and one OpenShift project day, then a full export, then refresh `CostManagement.pbix` and confirm the existing pages show rows. That live check is not part of the unit tests. SaaS and a self-managed instance are both valid targets for it.

@@ -41,7 +41,7 @@ Cost and usage requests page with `filter[limit]` and `filter[offset]`. Recommen
 
 Calculated tables `DateTable`, `MonthTable`, `OS Monthly Costs`, `OS Monthly Usage`, and `AWS Monthly Costs` stay in the model. Blank tag, cost-category, and org-unit rows stay in the Power Query used by the group-by filters.
 
-`DateTable` is the calendar from the earliest `Start Date` to the latest `End Date` in `data/export/Data_Period.csv`. `MonthTable` has one row per month in that calendar. OpenShift Details and Amazon Web Services share a Period dropdown of those months, labeled with the year, ` - `, and the month name, for example `2026 - October`. Cost overview uses that same selection. Cost Explorer has a separate Period control with its own start date and end date, and both dates are days in `DateTable`. See the root `README.md` for the export command and the steps to change each control.
+`DateTable` is the calendar from the earliest `Start Date` to the latest `End Date` in `data/export/Data_Period.csv`. Each export window is one row in that file, and later runs keep earlier windows. Daily cost, usage, and cluster-project rows keep their own day, and a later run replaces only the days inside the new window. `MonthTable` has one row per month in that calendar. OpenShift Details and Amazon Web Services share a Period dropdown of those months, labeled with the year, ` - `, and the month name, for example `2026 - October`. Cost overview uses that same selection. Cost Explorer has a separate Period control with its own start date and end date, and both dates are days in `DateTable`. See the root `README.md` for the export command and the steps to change each control.
 
 ## Service account
 

@@ -412,6 +412,289 @@ Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-01' -ClientI
 Assert-True 'usage tag group' (($script:UsageUrls -join "`n").Contains('group_by[tag:env]=*'))
 Remove-Item $usageDir -Recurse -Force
 
+$nestedDays = @(
+    @{
+        date = '2026-08-15'
+        projects = @(@{
+            project = 'web'
+            values = @(@{ date = '2026-08-15'; source_uuid = @('uuid-aug'); cost = @{ total = @{ value = 8; units = 'USD' } } })
+        })
+    },
+    @{
+        date = '2026-09-02'
+        projects = @(@{
+            project = 'web'
+            values = @(@{ date = '2026-09-02'; source_uuid = @('uuid-sep'); cost = @{ total = @{ value = 9; units = 'USD' } } })
+        })
+    }
+)
+$script:NestedDays = $nestedDays
+$nestedNamed = @(Get-CostManagementNamedValues -Items $nestedDays -GroupName 'project')
+$nestedDates = @($nestedNamed | ForEach-Object { [string](Get-CostManagementJsonField -Object $_.Value -Name 'date') })
+$nestedUuids = @($nestedNamed | ForEach-Object {
+    $ids = Get-CostManagementJsonField -Object $_.Value -Name 'source_uuid'
+    if ($null -eq $ids) { '' } else { [string](@($ids) -join ',') }
+})
+Assert-True 'nested project count' ($nestedNamed.Count -eq 2)
+Assert-True 'nested project names' (($nestedNamed[0].Name -eq 'web') -and ($nestedNamed[1].Name -eq 'web'))
+Assert-True 'nested value dates' (($nestedDates -contains '2026-08-15') -and ($nestedDates -contains '2026-09-02') -and ($nestedUuids -contains 'uuid-aug') -and ($nestedUuids -contains 'uuid-sep'))
+
+$orgDays = @(@{
+    date = '2026-08-01'
+    org_entities = @(@{ org_unit_id = 'r-f22a'; values = @(@{ date = '2026-08-01' }) })
+})
+$orgNamed = @(Get-CostManagementNamedValues -Items $orgDays -GroupName 'org_unit_id')
+Assert-True 'org entity name' ($orgNamed.Count -eq 1 -and $orgNamed[0].Name -eq 'r-f22a')
+
+$categoryDays = @(@{
+    date = '2026-08-01'
+    aws_categories = @(@{ aws_category = 'Platform'; values = @(@{ date = '2026-08-01' }) })
+})
+$categoryNamed = @(Get-CostManagementNamedValues -Items $categoryDays -GroupName 'aws_category')
+Assert-True 'category name' ($categoryNamed.Count -eq 1 -and $categoryNamed[0].Name -eq 'Platform')
+
+$script:SpanUrls = @()
+$spanInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $script:SpanUrls += [string]$Uri
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+$spanSession = New-CostManagementTokenSession -TokenUrl 'https://keycloak.example.com/token' -ClientId 'id' -ClientSecret 'secret' -Scope 'api.console' -Invoke $spanInvoke -Now { Get-Date }
+$spanSession.AccessToken = 'tok'
+$spanSession.IssuedAt = Get-Date
+Get-CostManagementWindowData -StartDate ([datetime]'2026-08-01') -EndDate ([datetime]'2026-09-05') -ApiBaseUrl 'https://cost.example.com' -RelativeUrl '/api/cost-management/v1/reports/openshift/costs/' -Session $spanSession -Invoke $spanInvoke -Sleep { } | Out-Null
+$spanJoined = $script:SpanUrls -join "`n"
+Assert-True 'august month request' ($spanJoined.Contains('start_date=2026-08-01') -and $spanJoined.Contains('end_date=2026-08-31'))
+Assert-True 'september month request' ($spanJoined.Contains('start_date=2026-09-01') -and $spanJoined.Contains('end_date=2026-09-05'))
+$spanFull = @($script:SpanUrls | Where-Object { $_.Contains('start_date=2026-08-01') -and $_.Contains('end_date=2026-09-05') })
+Assert-True 'no full span request' ($spanFull.Count -eq 0)
+
+$script:ClipUrls = @()
+$clipInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $script:ClipUrls += [string]$Uri
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+$clipSession = New-CostManagementTokenSession -TokenUrl 'https://keycloak.example.com/token' -ClientId 'id' -ClientSecret 'secret' -Scope 'api.console' -Invoke $clipInvoke -Now { Get-Date }
+$clipSession.AccessToken = 'tok'
+$clipSession.IssuedAt = Get-Date
+Get-CostManagementWindowData -StartDate ([datetime]'2026-08-15') -EndDate ([datetime]'2026-09-05') -ApiBaseUrl 'https://cost.example.com' -RelativeUrl '/api/cost-management/v1/reports/openshift/costs/' -Session $clipSession -Invoke $clipInvoke -Sleep { } | Out-Null
+$clipJoined = $script:ClipUrls -join "`n"
+Assert-True 'clipped august request' ($clipJoined.Contains('start_date=2026-08-15') -and $clipJoined.Contains('end_date=2026-08-31'))
+Assert-True 'clipped september request' ($clipJoined.Contains('start_date=2026-09-01') -and $clipJoined.Contains('end_date=2026-09-05'))
+
+$monthDir = Join-Path $env:TEMP ("cm-month-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $monthDir | Out-Null
+$monthInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('/tags/openshift/')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' } }
+    if ($u.Contains('group_by[project]') -and $u.Contains('start_date=2026-08-01') -and $u.Contains('end_date=2026-08-31')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @($script:NestedDays[0]) }; Body = '' }
+    }
+    if ($u.Contains('group_by[project]') -and $u.Contains('start_date=2026-09-01') -and $u.Contains('end_date=2026-09-05')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @($script:NestedDays[1]) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-08-01' -EndDate '2026-09-05' -ClientId 'id' -ClientSecret 'secret' -OutDir $monthDir -Dataset 'OS_Costs_Daily' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $monthInvoke -Now { Get-Date } -Sleep { }
+$monthRows = @(Import-Csv (Join-Path $monthDir 'OS_Costs_Daily.csv'))
+$augustCost = @($monthRows | Where-Object { $_.date -eq '2026-08-15' })
+$septemberCost = @($monthRows | Where-Object { $_.date -eq '2026-09-02' })
+Assert-True 'august cost date' ($augustCost.Count -eq 1 -and $augustCost[0].'values.date' -eq '2026-08-15' -and $augustCost[0].'values.source_uuid' -eq 'uuid-aug')
+Assert-True 'september cost date' ($septemberCost.Count -eq 1 -and $septemberCost[0].'values.date' -eq '2026-09-02' -and $septemberCost[0].Name -eq 'web')
+Remove-Item $monthDir -Recurse -Force
+
+$multiTagDir = Join-Path $env:TEMP ("cm-multitag-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $multiTagDir | Out-Null
+$script:ProjectTagUrls = @()
+$multiTagInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('filter[project]=web')) {
+        $script:ProjectTagUrls += $u
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ key = 'env'; enabled = $true; values = @('prod') }); meta = @{ count = 1 } }; Body = '' }
+    }
+    if ($u.Contains('group_by[project]') -and $u.Contains('start_date=2026-08-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @($script:NestedDays[0]) }; Body = '' }
+    }
+    if ($u.Contains('group_by[project]') -and $u.Contains('start_date=2026-09-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @($script:NestedDays[1]) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-08-01' -EndDate '2026-09-05' -ClientId 'id' -ClientSecret 'secret' -OutDir $multiTagDir -Dataset 'OS_Cost_Project_Tags' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $multiTagInvoke -Now { Get-Date } -Sleep { }
+$multiTagRows = @(Import-Csv (Join-Path $multiTagDir 'OS_Cost_Project_Tags.csv'))
+$augustTag = @($multiTagRows | Where-Object { $_.'Filter Month' -eq '2026-8' })
+$septemberTag = @($multiTagRows | Where-Object { $_.'Filter Month' -eq '2026-9' })
+Assert-True 'august tag month' ($augustTag.Count -eq 1 -and $augustTag[0].date -eq '2026-08-01' -and $augustTag[0].key -eq 'env')
+Assert-True 'september tag month' ($septemberTag.Count -eq 1 -and $septemberTag[0].date -eq '2026-09-01' -and $septemberTag[0].'Filter Month' -eq '2026-9')
+Assert-True 'project tags fetched once' ($script:ProjectTagUrls.Count -eq 1)
+Remove-Item $multiTagDir -Recurse -Force
+
+$clusterDir = Join-Path $env:TEMP ("cm-cluster-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $clusterDir | Out-Null
+$clusterInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('group_by[cluster]') -and $u.Contains('start_date=2026-08-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-08-15'; clusters = @(@{ cluster = 'prod'; values = @(@{ date = '2026-08-15' }) }) }) }; Body = '' }
+    }
+    if ($u.Contains('group_by[project]') -and $u.Contains('filter[cluster]=prod') -and $u.Contains('start_date=2026-08-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-08-15'; projects = @(@{ project = 'web'; values = @(@{ date = '2026-08-15'; cost = @{ total = @{ value = 3; units = 'USD' } } }) }) }) }; Body = '' }
+    }
+    if ($u.Contains('group_by[cluster]') -and $u.Contains('start_date=2026-09-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-09-02'; clusters = @(@{ cluster = 'prod'; values = @(@{ date = '2026-09-02' }) }) }) }; Body = '' }
+    }
+    if ($u.Contains('group_by[project]') -and $u.Contains('filter[cluster]=prod') -and $u.Contains('start_date=2026-09-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-09-02'; projects = @(@{ project = 'web'; values = @(@{ date = '2026-09-02'; cost = @{ total = @{ value = 4; units = 'USD' } } }) }) }) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-08-01' -EndDate '2026-09-05' -ClientId 'id' -ClientSecret 'secret' -OutDir $clusterDir -Dataset 'OS_Cost_Cluster_Projects' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $clusterInvoke -Now { Get-Date } -Sleep { }
+$clusterRows = @(Import-Csv (Join-Path $clusterDir 'OS_Cost_Cluster_Projects.csv'))
+$augustCluster = @($clusterRows | Where-Object { $_.date -eq '2026-08-15' })
+$septemberCluster = @($clusterRows | Where-Object { $_.date -eq '2026-09-02' })
+Assert-True 'august cluster day' ($augustCluster.Count -eq 1 -and $augustCluster[0].'Filter Month' -eq '2026-8' -and $augustCluster[0].project -eq 'web' -and $augustCluster[0].cluster -eq 'prod')
+Assert-True 'september cluster day' ($septemberCluster.Count -eq 1 -and $septemberCluster[0].'Filter Month' -eq '2026-9' -and $septemberCluster[0].value -eq '4')
+Remove-Item $clusterDir -Recurse -Force
+
+$usageMonthDir = Join-Path $env:TEMP ("cm-usage-month-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $usageMonthDir | Out-Null
+$usageMonthInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('/tags/openshift/')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' } }
+    if ($u.Contains('/reports/openshift/compute/') -and $u.Contains('group_by[project]') -and $u.Contains('start_date=2026-08-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-08-15'; projects = @(@{ project = 'web'; values = @(@{ date = '2026-08-15'; usage = @{ value = 1; units = 'cores' } }) }) }) }; Body = '' }
+    }
+    if ($u.Contains('/reports/openshift/compute/') -and $u.Contains('group_by[project]') -and $u.Contains('start_date=2026-09-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-09-02'; projects = @(@{ project = 'web'; values = @(@{ date = '2026-09-02'; usage = @{ value = 2; units = 'cores' } }) }) }) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-08-01' -EndDate '2026-09-05' -ClientId 'id' -ClientSecret 'secret' -OutDir $usageMonthDir -Dataset 'OS_Daily_Usage' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $usageMonthInvoke -Now { Get-Date } -Sleep { }
+$usageMonthRows = @(Import-Csv (Join-Path $usageMonthDir 'OS_Daily_Usage.csv'))
+Assert-True 'usage keeps both days' ((@($usageMonthRows | Where-Object { $_.date -eq '2026-08-15' })).Count -eq 1 -and (@($usageMonthRows | Where-Object { $_.date -eq '2026-09-02' })).Count -eq 1)
+Remove-Item $usageMonthDir -Recurse -Force
+
+$awsMonthDir = Join-Path $env:TEMP ("cm-aws-month-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $awsMonthDir | Out-Null
+$awsMonthInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('/tags/aws/') -or $u.Contains('/aws-categories/') -or $u.Contains('/organizations/aws/')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+    }
+    if ($u.Contains('/reports/aws/costs/') -and $u.Contains('group_by[account]') -and $u.Contains('start_date=2026-08-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-08-15'; accounts = @(@{ account = '111'; values = @(@{ date = '2026-08-15'; account_alias = 'prod' }) }) }) }; Body = '' }
+    }
+    if ($u.Contains('/reports/aws/costs/') -and $u.Contains('group_by[account]') -and $u.Contains('start_date=2026-09-01')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-09-02'; accounts = @(@{ account = '111'; values = @(@{ date = '2026-09-02'; account_alias = 'prod' }) }) }) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-08-01' -EndDate '2026-09-05' -ClientId 'id' -ClientSecret 'secret' -OutDir $awsMonthDir -Dataset 'AWS_Daily_Costs' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $awsMonthInvoke -Now { Get-Date } -Sleep { }
+$awsMonthRows = @(Import-Csv (Join-Path $awsMonthDir 'AWS_Daily_Costs.csv'))
+Assert-True 'aws keeps both days' ((@($awsMonthRows | Where-Object { $_.date -eq '2026-08-15' -and $_.'values.date' -eq '2026-08-15' })).Count -eq 1 -and (@($awsMonthRows | Where-Object { $_.date -eq '2026-09-02' })).Count -eq 1)
+Remove-Item $awsMonthDir -Recurse -Force
+
+$mergeDir = Join-Path $env:TEMP ("cm-merge-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $mergeDir | Out-Null
+$july = New-CostManagementRow 'OS_Costs_Daily'
+$july['date'] = '2026-07-10'
+$july['Name'] = 'july-web'
+$oldAugust = New-CostManagementRow 'OS_Costs_Daily'
+$oldAugust['date'] = '2026-08-15'
+$oldAugust['Name'] = 'old-august'
+Write-CostManagementCsv -Path (Join-Path $mergeDir 'OS_Costs_Daily.csv') -Header (Get-CostManagementSchemaHeader 'OS_Costs_Daily') -Rows @($july, $oldAugust)
+$mergeInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('/tags/openshift/')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' } }
+    if ($u.Contains('group_by[project]') -and $u.Contains('start_date=2026-08-01') -and $u.Contains('end_date=2026-08-31')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-08-20'; projects = @(@{ project = 'web'; values = @(@{ date = '2026-08-20' }) }) }) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-08-01' -EndDate '2026-08-31' -ClientId 'id' -ClientSecret 'secret' -OutDir $mergeDir -Dataset 'OS_Costs_Daily' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $mergeInvoke -Now { Get-Date } -Sleep { }
+$mergedRows = @(Import-Csv (Join-Path $mergeDir 'OS_Costs_Daily.csv'))
+Assert-True 'merge keeps july' ((@($mergedRows | Where-Object { $_.Name -eq 'july-web' -and $_.date -eq '2026-07-10' })).Count -eq 1)
+Assert-True 'merge replaces august' ((@($mergedRows | Where-Object { $_.date -eq '2026-08-20' -and $_.Name -eq 'web' })).Count -eq 1)
+Assert-True 'merge drops old august' ((@($mergedRows | Where-Object { $_.Name -eq 'old-august' })).Count -eq 0)
+Remove-Item $mergeDir -Recurse -Force
+
+$tagMergeDir = Join-Path $env:TEMP ("cm-tag-merge-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $tagMergeDir | Out-Null
+$oldJulyTag = New-CostManagementRow 'OS_Cost_Project_Tags'
+$oldJulyTag['date'] = '2026-07-01'
+$oldJulyTag['project'] = 'web'
+$oldJulyTag['key'] = 'env'
+$oldJulyTag['Filter Month'] = '2026-7'
+$oldSeptemberTag = New-CostManagementRow 'OS_Cost_Project_Tags'
+$oldSeptemberTag['date'] = '2026-09-01'
+$oldSeptemberTag['project'] = 'web'
+$oldSeptemberTag['key'] = 'old'
+$oldSeptemberTag['Filter Month'] = '2026-9'
+Write-CostManagementCsv -Path (Join-Path $tagMergeDir 'OS_Cost_Project_Tags.csv') -Header (Get-CostManagementSchemaHeader 'OS_Cost_Project_Tags') -Rows @($oldJulyTag, $oldSeptemberTag)
+$tagMergeInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('filter[project]=web')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ key = 'env'; enabled = $true; values = @('prod') }); meta = @{ count = 1 } }; Body = '' } }
+    if ($u.Contains('group_by[project]')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-09-12'; projects = @(@{ project = 'web'; values = @(@{ date = '2026-09-12' }) }) }) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-09-10' -EndDate '2026-09-20' -ClientId 'id' -ClientSecret 'secret' -OutDir $tagMergeDir -Dataset 'OS_Cost_Project_Tags' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $tagMergeInvoke -Now { Get-Date } -Sleep { }
+$tagMerged = @(Import-Csv (Join-Path $tagMergeDir 'OS_Cost_Project_Tags.csv'))
+Assert-True 'tag merge keeps july' ((@($tagMerged | Where-Object { $_.date -eq '2026-07-01' -and $_.key -eq 'env' })).Count -eq 1)
+Assert-True 'tag merge replaces september' ((@($tagMerged | Where-Object { $_.date -eq '2026-09-01' -and $_.key -eq 'env' -and $_.'Filter Month' -eq '2026-9' })).Count -eq 1)
+Assert-True 'tag merge drops old september' ((@($tagMerged | Where-Object { $_.key -eq 'old' })).Count -eq 0)
+Remove-Item $tagMergeDir -Recurse -Force
+
+$periodDir = Join-Path $env:TEMP ("cm-period-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $periodDir | Out-Null
+$periodInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-08-01' -EndDate '2026-09-05' -ClientId 'id' -ClientSecret 'secret' -OutDir $periodDir -Dataset 'Default_Master_Settings' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $periodInvoke -Now { Get-Date } -Sleep { }
+Export-CostManagementData -StartDate '2026-09-10' -EndDate '2026-09-20' -ClientId 'id' -ClientSecret 'secret' -OutDir $periodDir -Dataset 'Default_Master_Settings' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $periodInvoke -Now { Get-Date } -Sleep { }
+$periodRows = @(Import-Csv (Join-Path $periodDir 'Data_Period.csv'))
+Assert-True 'period keeps both windows' ($periodRows.Count -eq 2 -and (@($periodRows | Where-Object { $_.'Start Date' -eq '2026-08-01' -and $_.'End Date' -eq '2026-09-05' })).Count -eq 1 -and (@($periodRows | Where-Object { $_.'Start Date' -eq '2026-09-10' -and $_.'End Date' -eq '2026-09-20' })).Count -eq 1)
+Export-CostManagementData -StartDate '2026-09-10' -EndDate '2026-09-20' -ClientId 'id' -ClientSecret 'secret' -OutDir $periodDir -Dataset 'Default_Master_Settings' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $periodInvoke -Now { Get-Date } -Sleep { }
+$periodAgain = @(Import-Csv (Join-Path $periodDir 'Data_Period.csv'))
+Assert-True 'period does not duplicate a window' ($periodAgain.Count -eq 2)
+$settingsAgain = Import-Csv (Join-Path $periodDir 'Default_Master_Settings.csv')
+Assert-True 'settings stay one row' (@($settingsAgain).Count -eq 1 -and $settingsAgain.code -eq 'USD')
+Remove-Item $periodDir -Recurse -Force
+
 if ($script:Failed -gt 0) { exit 1 }
 Write-Host "ALL PASS"
 exit 0
