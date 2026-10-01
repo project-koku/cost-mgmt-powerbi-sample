@@ -74,6 +74,28 @@ Open `PowerBI/CostManagement.pbix` in Power BI Desktop and refresh it. The `Data
 
 Refresh the report only after the export script exits 0.
 
+## Change the date range
+
+The export window is the set of days the report can show. The script writes that window to `data/export/Data_Period.csv` as `Start Date` and `End Date`. After a refresh, `DateTable` is the calendar from the earliest start date to the latest end date, and `MonthTable` has one row for each month in that calendar. Period dropdowns list those months as the year, ` - `, and the month name, for example `2026 - October`.
+
+Set the window on the export, then refresh `PowerBI/CostManagement.pbix`:
+
+```powershell
+powershell.exe -File scripts/Export-CostManagement.ps1 -StartDate 2026-08-01 -EndDate 2026-09-30
+```
+
+Dates use `yyyy-MM-dd`. Refresh after the script exits 0. The Period lists update from the new `Data_Period` rows on that refresh.
+
+### OpenShift, Cost overview, and Amazon Web Services
+
+OpenShift Details and Amazon Web Services share one Period dropdown. Cost overview uses that same selection. Open the dropdown, choose a month that is listed, and save the report. A month is listed when the exported window includes it. Saving the report keeps that month selected the next time the file opens.
+
+### Cost Explorer
+
+Cost Explorer has its own Period control: a start date and an end date. On the Cost Explorer page, set those two dates and save the report. Both dates have to be days in `DateTable`, so export a window that includes them and refresh before choosing them.
+
+For 1 August 2026 through 5 September 2026, export at least `-StartDate 2026-08-01 -EndDate 2026-09-05`, refresh, then set the Cost Explorer start to 1 August 2026 and the end to 5 September 2026.
+
 ## Failures
 
 Read `data/export/export.log`. A failed request is recorded with its HTTP status. Rerun a single dataset over a shorter window:

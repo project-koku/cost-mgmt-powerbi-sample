@@ -41,6 +41,8 @@ Cost and usage requests page with `filter[limit]` and `filter[offset]`. Recommen
 
 Calculated tables `DateTable`, `MonthTable`, `OS Monthly Costs`, `OS Monthly Usage`, and `AWS Monthly Costs` stay in the model. Blank tag, cost-category, and org-unit rows stay in the Power Query used by the group-by filters.
 
+`DateTable` is the calendar from the earliest `Start Date` to the latest `End Date` in `data/export/Data_Period.csv`. `MonthTable` has one row per month in that calendar. OpenShift Details and Amazon Web Services share a Period dropdown of those months, labeled with the year, ` - `, and the month name, for example `2026 - October`. Cost overview uses that same selection. Cost Explorer has a separate Period control with its own start date and end date, and both dates are days in `DateTable`. See the root `README.md` for the export command and the steps to change each control.
+
 ## Service account
 
 The service account needs permission to read the API paths above. Access requirements are documented in [Limiting access to cost management resources](https://access.redhat.com/documentation/en-us/cost_management_service/1-latest/html/limiting_access_to_cost_management_resources/index).
