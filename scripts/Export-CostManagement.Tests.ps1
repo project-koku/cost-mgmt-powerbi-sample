@@ -179,6 +179,26 @@ try {
 Assert-True 'one day 500 throws' $oneDayThrew
 Assert-True 'one day slept 2 4 8' (($script:Sleeps -join ',') -eq '2,4,8')
 
+$script:BadWindowUrls = @()
+$badWindowInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $script:BadWindowUrls += [string]$Uri
+    return [pscustomobject]@{ StatusCode = 400; Json = $null; Body = 'bad request' }
+}
+$badWindowSession = New-CostManagementTokenSession -TokenUrl 'https://keycloak.example.com/token' -ClientId 'id' -ClientSecret 'secret' -Scope 'api.console' -Invoke $badWindowInvoke -Now { Get-Date }
+$badWindowSession.AccessToken = 'tok'
+$badWindowSession.IssuedAt = Get-Date
+$badWindowThrew = $false
+try {
+    Get-CostManagementWindowData -StartDate ([datetime]'2026-09-01') -EndDate ([datetime]'2026-09-04') -ApiBaseUrl 'https://cost.example.com' -RelativeUrl '/api/cost-management/v1/reports/openshift/costs/' -Session $badWindowSession -Invoke $badWindowInvoke -Sleep { }
+} catch {
+    $badWindowThrew = $true
+}
+Assert-True 'http 400 throws' $badWindowThrew
+$badWindowJoined = $script:BadWindowUrls -join "`n"
+Assert-True 'http 400 calls the full window' ($badWindowJoined.Contains('start_date=2026-09-01') -and $badWindowJoined.Contains('end_date=2026-09-04'))
+Assert-True 'http 400 is not split' (-not $badWindowJoined.Contains('end_date=2026-09-02'))
+
 $script:HalfCalls = @()
 $halfInvoke = {
     param($Method, $Uri, $Headers, $Body)
@@ -466,6 +486,42 @@ Assert-True 'aws tag group' ($awsJoined.Contains('group_by[tag:env]=*'))
 Assert-True 'aws category group' ($awsJoined.Contains('group_by[aws_category:CostCenter]=*'))
 Assert-True 'aws org group' ($awsJoined.Contains('group_by[org_unit_id]=r-f22a'))
 Remove-Item $awsDir -Recurse -Force
+
+$orgDenySession = New-CostManagementTokenSession -TokenUrl 'https://keycloak.example.com/token' -ClientId 'id' -ClientSecret 'secret' -Scope 'api.console' -Invoke { param($Method, $Uri, $Headers, $Body) return [pscustomobject]@{ StatusCode = 403; Json = $null; Body = 'denied' } } -Now { Get-Date }
+$orgDenySession.AccessToken = 'tok'
+$orgDenySession.IssuedAt = Get-Date
+$orgDenyThrew = $false
+try {
+    Get-CostManagementOrgRows -ApiBaseUrl 'https://cost.example.com' -Session $orgDenySession -Invoke { param($Method, $Uri, $Headers, $Body) return [pscustomobject]@{ StatusCode = 403; Json = $null; Body = 'denied' } } -Sleep { } -StartDate ([datetime]'2026-09-01') -EndDate ([datetime]'2026-09-01')
+} catch {
+    $orgDenyThrew = $true
+}
+Assert-True 'org 403 throws' $orgDenyThrew
+
+$script:OrgCostUrls = @()
+$orgCostInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u.Contains('/tags/aws/')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' } }
+    if ($u.Contains('/aws-categories/')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' } }
+    if ($u.Contains('/organizations/aws/')) { return [pscustomobject]@{ StatusCode = 403; Json = $null; Body = 'denied' } }
+    if ($u.Contains('/reports/aws/costs/')) { $script:OrgCostUrls += $u }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+$orgCostSession = New-CostManagementTokenSession -TokenUrl 'https://keycloak.example.com/token' -ClientId 'id' -ClientSecret 'secret' -Scope 'api.console' -Invoke $orgCostInvoke -Now { Get-Date }
+$orgCostSession.AccessToken = 'tok'
+$orgCostSession.IssuedAt = Get-Date
+$orgCostThrew = $false
+try {
+    Get-CostManagementAwsCostRows -ApiBaseUrl 'https://cost.example.com' -Session $orgCostSession -Invoke $orgCostInvoke -Sleep { } -StartDate ([datetime]'2026-09-01') -EndDate ([datetime]'2026-09-01')
+} catch {
+    $orgCostThrew = $true
+}
+Assert-True 'aws org 403 throws' $orgCostThrew
+Assert-True 'aws org 403 skips cost calls' ($script:OrgCostUrls.Count -eq 0)
 
 $usageDir = Join-Path $env:TEMP ("cm-usage-" + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $usageDir | Out-Null

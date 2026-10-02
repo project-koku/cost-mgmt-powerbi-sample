@@ -475,6 +475,8 @@ function Get-CostManagementWindowData {
             if ($RelativeUrl.Contains('?')) { $separator = '&' }
             $relative = $RelativeUrl + $separator + 'start_date=' + $start + '&end_date=' + $end + '&filter[limit]=100&filter[offset]=' + $offset
             $response = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
+            $status = [int]$response.StatusCode
+            if ($status -ne 200) { throw ('status=' + $status) }
             $meta = Get-CostManagementJsonField -Object $response.Json -Name 'meta'
             $countValue = Get-CostManagementJsonField -Object $meta -Name 'count'
             $count = 0
@@ -488,6 +490,7 @@ function Get-CostManagementWindowData {
         }
         return $rows.ToArray()
     } catch {
+        if ([string]$_.Exception.Message -match 'status=4\d\d') { throw }
         $halves = Split-CostManagementDateWindow -StartDate $StartDate -EndDate $EndDate
         if ($null -eq $halves) { throw }
         $left = @(Get-CostManagementWindowData -StartDate $halves[0].StartDate -EndDate $halves[0].EndDate -ApiBaseUrl $ApiBaseUrl -RelativeUrl $RelativeUrl -Session $Session -Invoke $Invoke -Sleep $Sleep)
@@ -1171,6 +1174,7 @@ function Get-CostManagementAwsCostRows {
         $groups.Add([pscustomobject]@{ Code = 'aws_category'; Query = ('group_by[aws_category:{0}]=*' -f [uri]::EscapeDataString($key)); Key = $key })
     }
     $orgResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/organizations/aws/' -Session $Session -Invoke $Invoke -Sleep $Sleep
+    if ([int]$orgResponse.StatusCode -ne 200) { throw ('status=' + [int]$orgResponse.StatusCode + ' /api/cost-management/v1/organizations/aws/') }
     foreach ($key in (Get-CostManagementDistinctKeys -Items (Get-CostManagementJsonField -Object $orgResponse.Json -Name 'data') -Names @('org_unit_id'))) {
         $groups.Add([pscustomobject]@{ Code = 'org_unit_id'; Query = ('group_by[org_unit_id]={0}' -f [uri]::EscapeDataString($key)); Key = $key })
     }
@@ -1207,6 +1211,7 @@ function Get-CostManagementCategoryRows {
 function Get-CostManagementOrgRows {
     param($ApiBaseUrl, $Session, $Invoke, $Sleep, $StartDate, $EndDate)
     $response = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/organizations/aws/' -Session $Session -Invoke $Invoke -Sleep $Sleep
+    if ([int]$response.StatusCode -ne 200) { throw ('status=' + [int]$response.StatusCode + ' /api/cost-management/v1/organizations/aws/') }
     $rows = New-Object System.Collections.Generic.List[object]
     foreach ($item in (ConvertTo-CostManagementItemList (Get-CostManagementJsonField -Object $response.Json -Name 'data'))) {
         $row = New-CostManagementRow 'AWS_Org_Units'

@@ -70,7 +70,7 @@ powershell.exe -File scripts/Export-CostManagement.ps1 -TokenUrl https://keycloa
 
 ## Refresh the report
 
-Open `PowerBI/CostManagement.pbix` in Power BI Desktop and refresh it. The `DataFolder` parameter defaults to this repository's `data` directory. Queries read `DataFolder\export\<file>.csv` and `DataFolder\static\<file>.csv`.
+Open `PowerBI/CostManagement.pbix` in Power BI Desktop. Before the first refresh, set the `DataFolder` parameter to this clone's `data` directory. Queries read `DataFolder\export\<file>.csv` and `DataFolder\static\<file>.csv`.
 
 Refresh the report only after the export script exits 0.
 
@@ -88,7 +88,7 @@ Dates use `yyyy-MM-dd`. Refresh after the script exits 0. The Period lists updat
 
 Each run adds one `Data_Period` row for that window. A window that is already listed stays once. Earlier windows stay, so the calendar runs from the earliest start through the latest end already on disk. Delete `Data_Period.csv` to start the calendar over.
 
-Daily cost, usage, and cluster-project rows keep the day they belong to. A later run replaces only rows whose day is inside the new window. Project tags are stored once per month, dated the first of that month. A later run replaces a month's tags when the new window overlaps that month. Delete a dataset CSV to drop its history. Tag-key lists, cost categories, and recommendations are replaced when those calls return HTTP 200. Any other status keeps the previous file and the run exits 1. Org units are replaced from the response of that call. Settings are replaced when the currency catalog returns the account currency, including its name, symbol, and description. A currency call that is not HTTP 200, or a catalog with no matching currency, keeps the previous settings file and the run exits 1.
+Daily cost, usage, and cluster-project rows keep the day they belong to. A later run replaces only rows whose day is inside the new window. Project tags are stored once per month, dated the first of that month. A later run replaces a month's tags when the new window overlaps that month. Delete a dataset CSV to drop its history. Tag-key lists, cost categories, recommendations, and org units are replaced when those calls return HTTP 200. Any other status keeps the previous file and the run exits 1. Settings are replaced when the currency catalog returns the account currency, including its name, symbol, and description. A currency call that is not HTTP 200, or a catalog with no matching currency, keeps the previous settings file and the run exits 1.
 
 ### OpenShift, Cost overview, and Amazon Web Services
 
