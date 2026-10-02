@@ -45,4 +45,4 @@ Calculated tables `DateTable`, `MonthTable`, `OS Monthly Costs`, `OS Monthly Usa
 
 ## Service account
 
-The service account needs permission to read the API paths above. Access requirements are documented in [Limiting access to cost management resources](https://access.redhat.com/documentation/en-us/cost_management_service/1-latest/html/limiting_access_to_cost_management_resources/index).
+The service account needs permission to read the API paths above. Access requirements are documented in the [Red Hat Lightspeed cost management API cheat sheet](https://developers.redhat.com/cheat-sheets/red-hat-lightspeed-cost-management-api) and [How to use Red Hat Hybrid Cloud Console Service accounts with services](https://access.redhat.com/solutions/7072891).
