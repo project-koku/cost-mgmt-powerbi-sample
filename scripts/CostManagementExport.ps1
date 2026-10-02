@@ -685,11 +685,18 @@ function Get-CostManagementDistinctKeys {
     Write-Output -NoEnumerate $keys
 }
 
+function Get-CostManagementReportGroupName {
+    param($Group)
+    if ($Group.Key -and ($Group.Code -eq 'tag' -or $Group.Code -eq 'aws_category')) {
+        return [string]$Group.Key
+    }
+    return [string]$Group.Code
+}
+
 function Get-CostManagementGroupArrayName {
     param([string]$GroupName)
     switch ($GroupName) {
         'org_unit_id' { return 'org_entities' }
-        'aws_category' { return 'aws_categories' }
         default { return ($GroupName + 's') }
     }
 }
@@ -973,7 +980,7 @@ function Get-CostManagementOpenShiftCostRows {
     foreach ($group in $groups) {
         $relative = '/api/cost-management/v1/reports/openshift/costs/?currency=' + [uri]::EscapeDataString($account.Code) + '&filter[resolution]=daily&' + $group.Query
         $items = Get-CostManagementWindowData -StartDate $StartDate -EndDate $EndDate -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
-        foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName $(if ($group.Code -eq 'tag') { 'tag' } else { $group.Code }))) {
+        foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName (Get-CostManagementReportGroupName $group))) {
             $rows.Add((ConvertTo-OpenShiftCostRow -CurrencyCode $account.Code -GroupByCode $group.Code -DistributedOverhead $false -Day (Get-CostManagementValueDate -ValueRecord $named.Value) -Name $named.Name -ValueRecord $named.Value -TagKey $group.Key))
         }
     }
@@ -1123,7 +1130,7 @@ function Get-CostManagementUsageRows {
         foreach ($group in $groups) {
             $relative = '/api/cost-management/v1/reports/openshift/' + $model.Name + '/?currency=' + [uri]::EscapeDataString($account.Code) + '&filter[resolution]=daily&' + $group.Query
             $items = Get-CostManagementWindowData -StartDate $StartDate -EndDate $EndDate -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
-            foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName $group.Code)) {
+            foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName (Get-CostManagementReportGroupName $group))) {
                 $row = New-CostManagementRow 'OS_Daily_Usage'
                 $row['Group By'] = $group.Code
                 $row['Group By Code'] = $group.Code
@@ -1171,7 +1178,7 @@ function Get-CostManagementAwsCostRows {
     foreach ($group in $groups) {
         $relative = '/api/cost-management/v1/reports/aws/costs/?currency=' + [uri]::EscapeDataString($account.Code) + '&filter[resolution]=daily&' + $group.Query
         $items = Get-CostManagementWindowData -StartDate $StartDate -EndDate $EndDate -ApiBaseUrl $ApiBaseUrl -RelativeUrl $relative -Session $Session -Invoke $Invoke -Sleep $Sleep
-        foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName $group.Code)) {
+        foreach ($named in (Get-CostManagementNamedValues -Items $items -GroupName (Get-CostManagementReportGroupName $group))) {
             $rows.Add((ConvertTo-AwsCostRow -ValueRecord $named.Value -CurrencyCode $account.Code -CostType $account.CostType -GroupByCode $group.Code -Day (Get-CostManagementValueDate -ValueRecord $named.Value) -Name $named.Name -TagKey $group.Key))
         }
     }

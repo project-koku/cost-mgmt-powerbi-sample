@@ -207,7 +207,7 @@ Cost and usage windows are downloaded one calendar month at a time. 1 August 202
 
 ## Flattening and nulls
 
-A cost or usage report is nested. Each `data` item is a day. That day contains the group array: `projects`, `clusters`, `nodes`, `tags`, `accounts`, `services`, `regions`, `aws_categories`, or `org_entities`. Each group contains `values`. The script writes one CSV row per value.
+A cost or usage report is nested. Each `data` item is a day. That day contains the group array. Project, cluster, node, account, service, and region use the plural name: `projects`, `clusters`, `nodes`, `accounts`, `services`, `regions`. An org unit uses `org_entities`. A tag or AWS cost category uses that key with `s` appended, and each item names its value with the same key. Tag key `env` produces `envs`, and each item contains `env`. Each group contains `values`. The script writes one CSV row per value.
 
 `date` is that value's own day for OpenShift costs, AWS costs, usage, and cluster projects. `values.date` stays the API value. OpenShift costs, AWS costs, and usage do not write `Filter Month`; Power BI derives it from `date`. Cluster-project rows write `Filter Month` from that same day: the year, a hyphen, and the month number with no leading zero. 15 August 2026 is `2026-8`. `2026-08` is wrong.
 

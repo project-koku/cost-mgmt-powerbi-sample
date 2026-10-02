@@ -313,6 +313,29 @@ Assert-True 'cost source uuid' ($costRow.'values.source_uuid' -eq 'uuid-1')
 Assert-True 'cost host' (@($script:CostUrls | Where-Object { $_.StartsWith('https://cost.example.com/api/cost-management/v1/reports/openshift/costs/') }).Count -ge 1)
 Remove-Item $costDir -Recurse -Force
 
+$tagCostDir = Join-Path $env:TEMP ("cm-tag-cost-" + [guid]::NewGuid().ToString())
+New-Item -ItemType Directory -Path $tagCostDir | Out-Null
+$tagCostInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD'; name = 'US Dollar'; symbol = '$'; description = 'USD' }) }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @{ currency = 'USD'; cost_type = 'calculated' } }; Body = '' } }
+    if ($u -like '*/tags/openshift/*' -and -not $u.Contains('filter[project]=')) { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ key = 'env'; enabled = $true }); meta = @{ count = 1 } }; Body = '' } }
+    if ($u -like '*reports/openshift/costs/*' -and $u.Contains('group_by[tag:env]')) {
+        return [pscustomobject]@{ StatusCode = 200; Json = @{ meta = @{ count = 1 }; data = @(@{ date = '2026-09-02'; envs = @(@{ env = 'prod'; values = @(@{ date = '2026-09-02'; cost = @{ total = @{ value = 4; units = 'USD' } } }) }) }) }; Body = '' }
+    }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+Export-CostManagementData -StartDate '2026-09-01' -EndDate '2026-09-02' -ClientId 'id' -ClientSecret 'secret' -OutDir $tagCostDir -Dataset 'OS_Costs_Daily' -ApiBaseUrl 'https://cost.example.com' -TokenUrl 'https://keycloak.example.com/token' -Scope 'api.console' -Invoke $tagCostInvoke -Now { Get-Date } -Sleep { }
+$tagCostRows = @(Import-Csv (Join-Path $tagCostDir 'OS_Costs_Daily.csv'))
+$tagCostRow = $tagCostRows | Where-Object { $_.'Group By Code' -eq 'tag' } | Select-Object -First 1
+Assert-True 'tag cost row written' ($null -ne $tagCostRow)
+Assert-True 'tag cost key' ($tagCostRow.key -eq 'env')
+Assert-True 'tag cost value name' ($tagCostRow.Name -eq 'prod')
+Assert-True 'tag cost total' ($tagCostRow.'values.cost.total.value' -eq '4')
+Remove-Item $tagCostDir -Recurse -Force
+
 $tagDir = Join-Path $env:TEMP ("cm-tags-" + [guid]::NewGuid().ToString())
 New-Item -ItemType Directory -Path $tagDir | Out-Null
 $tagInvoke = {
@@ -500,9 +523,9 @@ Assert-True 'org entity name' ($orgNamed.Count -eq 1 -and $orgNamed[0].Name -eq 
 
 $categoryDays = @(@{
     date = '2026-08-01'
-    aws_categories = @(@{ aws_category = 'Platform'; values = @(@{ date = '2026-08-01' }) })
+    CostCenters = @(@{ CostCenter = 'Platform'; values = @(@{ date = '2026-08-01' }) })
 })
-$categoryNamed = @(Get-CostManagementNamedValues -Items $categoryDays -GroupName 'aws_category')
+$categoryNamed = @(Get-CostManagementNamedValues -Items $categoryDays -GroupName 'CostCenter')
 Assert-True 'category name' ($categoryNamed.Count -eq 1 -and $categoryNamed[0].Name -eq 'Platform')
 
 $script:SpanUrls = @()
