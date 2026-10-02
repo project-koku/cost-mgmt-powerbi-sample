@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
+language: en-US
+
+# Org defaults live in project-koku/coderabbit. This file adds only this sample's rules.
+inheritance: true
+
+reviews:
+  path_filters:
+    # CodeRabbit skips **/*.csv by default. Only the same pattern, without the
+    # leading !, turns that skip off. A narrower include such as data/static/**/*.csv does not.
+    - "**/*.csv"
+    # The report binary is not in the default skip list.
+    - "!**/*.pbix"
+
+  path_instructions:
+    - path: "scripts/**/*.ps1"
+      instructions: |
+        Follow AGENTS.md and docs/specs/2026-09-30-powershell-csv-loader-design.md.
+        Windows PowerShell 5.1 is the only loader. Do not suggest PowerShell 7 syntax.
+        The script downloads JSON and writes CSV. Do not add a second loader, a database, or Excel.
+        A null from the API is an empty CSV field. A failed HTTP response is logged with its status and is not stored as a null cell.
+        Do not print or commit the client secret, the access token, or proxy credentials.
+        -TestProxy must not read auth.csv. -Test checks the proxy before the client secret is sent. A configured proxy is used.
+        scripts/Export-CostManagement.Tests.ps1 uses Windows PowerShell 5.1 and does not call the network.
+    - path: "PowerBI/**/*.pq"
+      instructions: |
+        Follow AGENTS.md. These queries import CSV. Keep the existing pages, measures, and calculated tables.
+        Change queries in Power BI Desktop. Do not generate a .pbix from Cost Management.
+        Currency is the account currency, shown as a label, not a chooser.
+    - path: "schema/**"
+      instructions: |
+        schema/*.columns.txt is the column contract for the CSV files the report imports.
+    - path: "data/static/**/*.csv"
+      instructions: |
+        These are committed lookup tables. Customer cost exports stay in gitignored data/export/. Do not put account exports or secrets here.
+    - path: "docs/**/*.md"
+      instructions: |
+        The supported workflow is the PowerShell script, then the Power BI report. Excel workbooks are gone.
+
+knowledge_base:
+  code_guidelines:
+    enabled: true
+    filePatterns:
+      - files: "docs/specs/2026-09-30-powershell-csv-loader-design.md"
+        applyTo: "scripts/**/*.ps1"
+      - files: "docs/specs/2026-09-30-powershell-csv-loader-design.md"
+        applyTo: "PowerBI/**/*.pq"
+      - files: "docs/specs/2026-09-30-powershell-csv-loader-design.md"
+        applyTo: "schema/**"
