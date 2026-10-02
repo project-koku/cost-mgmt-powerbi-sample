@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cost Management Power BI</title>
+  <meta name="description" content="A sample Power BI report and Windows PowerShell loader for Red Hat Cost Management. Export CSV from console.redhat.com or a self-managed service, then refresh the report.">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Red+Hat+Display:wght@400;500;600;700&family=Red+Hat+Text:wght@400;500;600&family=Red+Hat+Mono:wght@400;500&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --rh-red: #EE0000;
+      --rh-red-dark: #A30000;
+      --rh-black: #151515;
+      --rh-white: #FFFFFF;
+      --rh-gray-100: #F5F5F5;
+      --rh-gray-200: #E0E0E0;
+      --rh-gray-400: #8A8D90;
+      --rh-gray-600: #4D5258;
+      --rh-gray-800: #292929;
+      --section-gap: 6rem;
+      --content-max: 1100px;
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'Red Hat Text', system-ui, -apple-system, sans-serif;
+      color: var(--rh-black);
+      background: var(--rh-white);
+      line-height: 1.7;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    nav {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(21, 21, 21, 0.95);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .nav-inner {
+      max-width: var(--content-max);
+      margin: 0 auto; padding: 0 2rem;
+      display: flex; align-items: center; height: 56px;
+    }
+    .nav-logo {
+      display: flex; align-items: center; gap: 0.625rem;
+      text-decoration: none; color: var(--rh-white);
+      font-family: 'Red Hat Display', sans-serif;
+      font-weight: 600; font-size: 1rem;
+    }
+    .nav-mark {
+      width: 28px; height: 28px; border-radius: 4px;
+      background: var(--rh-red);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .nav-links {
+      margin-left: auto; display: flex; gap: 1.75rem; list-style: none;
+    }
+    .nav-links a {
+      color: rgba(255,255,255,0.7); text-decoration: none;
+      font-size: 0.875rem; font-weight: 500;
+      transition: color 0.2s;
+    }
+    .nav-links a:hover { color: var(--rh-white); }
+
+    .hero {
+      background: linear-gradient(160deg, var(--rh-black) 0%, #1a1a2e 50%, var(--rh-black) 100%);
+      color: var(--rh-white);
+      padding: 8rem 2rem 5rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+    .hero::before {
+      content: ''; position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, rgba(238,0,0,0.12) 0%, transparent 60%);
+    }
+    .hero-content { position: relative; max-width: 740px; margin: 0 auto; }
+    .hero h1 {
+      font-family: 'Red Hat Display', sans-serif;
+      font-size: clamp(2rem, 5vw, 3.25rem);
+      font-weight: 700; line-height: 1.2;
+      margin-bottom: 1.25rem; letter-spacing: -0.02em;
+    }
+    .hero h1 span { color: var(--rh-red); }
+    .hero p {
+      font-size: 1.125rem; color: rgba(255,255,255,0.75);
+      max-width: 560px; margin: 0 auto 2rem;
+    }
+    .hero-actions { display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      display: inline-flex; align-items: center; gap: 0.5rem;
+      padding: 0.75rem 1.5rem; border-radius: 6px;
+      font-family: 'Red Hat Text', sans-serif;
+      font-size: 0.9375rem; font-weight: 600;
+      text-decoration: none; transition: all 0.2s;
+      border: 2px solid transparent;
+    }
+    .btn-primary {
+      background: var(--rh-red); color: var(--rh-white);
+      border-color: var(--rh-red);
+    }
+    .btn-primary:hover { background: var(--rh-red-dark); border-color: var(--rh-red-dark); }
+    .btn-secondary {
+      background: transparent; color: var(--rh-white);
+      border-color: rgba(255,255,255,0.3);
+    }
+    .btn-secondary:hover { border-color: rgba(255,255,255,0.7); }
+    .btn svg { width: 18px; height: 18px; }
+
+    .hero-screenshot {
+      margin-top: 3rem; position: relative;
+      max-width: 960px; margin-left: auto; margin-right: auto;
+    }
+    .hero-screenshot img {
+      width: 100%; border-radius: 10px;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.06);
+      cursor: pointer;
+    }
+
+    section { padding: var(--section-gap) 2rem; }
+    .section-inner { max-width: var(--content-max); margin: 0 auto; }
+    .section-label {
+      font-family: 'Red Hat Display', sans-serif;
+      font-size: 0.8125rem; font-weight: 700;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      color: var(--rh-red); margin-bottom: 0.75rem;
+    }
+    .section-title {
+      font-family: 'Red Hat Display', sans-serif;
+      font-size: clamp(1.5rem, 3.5vw, 2.25rem);
+      font-weight: 700; line-height: 1.25;
+      margin-bottom: 1rem; letter-spacing: -0.015em;
+    }
+    .section-subtitle {
+      font-size: 1.0625rem; color: var(--rh-gray-600);
+      max-width: 620px; margin-bottom: 2.5rem;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1.5rem;
+    }
+    .feature-card {
+      padding: 1.75rem;
+      border: 1px solid var(--rh-gray-200);
+      border-radius: 10px;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .feature-card:hover {
+      border-color: var(--rh-red);
+      box-shadow: 0 4px 20px rgba(238,0,0,0.08);
+    }
+    .feature-icon {
+      width: 40px; height: 40px;
+      background: rgba(238,0,0,0.08);
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 1rem; color: var(--rh-red);
+    }
+    .feature-card h3 {
+      font-family: 'Red Hat Display', sans-serif;
+      font-size: 1.0625rem; font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+    .feature-card p { font-size: 0.9375rem; color: var(--rh-gray-600); line-height: 1.6; }
+
+    .pages-table {
+      width: 100%; border-collapse: collapse;
+      font-size: 0.9375rem;
+    }
+    .pages-table th, .pages-table td {
+      text-align: left; padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--rh-gray-200);
+      vertical-align: top;
+    }
+    .pages-table th {
+      font-family: 'Red Hat Display', sans-serif;
+      font-weight: 600; font-size: 0.8125rem;
+      text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--rh-gray-600);
+    }
+    .pages-table td:first-child {
+      font-weight: 600; white-space: nowrap;
+    }
+
+    .screenshots-section { background: var(--rh-gray-100); }
+    .screenshots-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 2rem;
+    }
+    .screenshot-item { text-align: center; }
+    .screenshot-item img {
+      width: 100%; border-radius: 8px;
+      border: 1px solid var(--rh-gray-200);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
+      background: var(--rh-white);
+      transition: transform 0.2s, box-shadow 0.2s;
+      cursor: pointer;
+    }
+    .screenshot-item img:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    }
+    .screenshot-item figcaption {
+      margin-top: 0.75rem;
+      font-size: 0.875rem; font-weight: 500;
+      color: var(--rh-gray-600);
+    }
+
+    .export-section { background: var(--rh-white); }
+    .steps { display: grid; gap: 1.25rem; }
+    .step {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 1rem;
+      align-items: start;
+    }
+    .step-num {
+      width: 32px; height: 32px; border-radius: 50%;
+      background: rgba(238,0,0,0.08); color: var(--rh-red);
+      font-family: 'Red Hat Display', sans-serif;
+      font-weight: 700; font-size: 0.875rem;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .step h3 {
+      font-family: 'Red Hat Display', sans-serif;
+      font-size: 1rem; font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+    .step p { font-size: 0.9375rem; color: var(--rh-gray-600); }
+    pre {
+      background: var(--rh-gray-800); color: #e0e0e0;
+      padding: 0.875rem 1rem; border-radius: 6px;
+      overflow-x: auto; font-family: 'Red Hat Mono', monospace;
+      font-size: 0.8125rem; line-height: 1.6;
+      margin-top: 0.75rem;
+    }
+
+    footer {
+      background: var(--rh-black); color: rgba(255,255,255,0.5);
+      padding: 3rem 2rem; text-align: center; font-size: 0.875rem;
+    }
+    footer a { color: var(--rh-red); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+    footer p { margin-bottom: 0.5rem; }
+
+    .lightbox {
+      display: none; position: fixed; inset: 0; z-index: 200;
+      background: rgba(0,0,0,0.9);
+      align-items: center; justify-content: center;
+      cursor: zoom-out;
+    }
+    .lightbox.active { display: flex; }
+    .lightbox img {
+      max-width: 92vw; max-height: 92vh;
+      border-radius: 8px;
+      box-shadow: 0 0 60px rgba(0,0,0,0.5);
+    }
+
+    @media (max-width: 640px) {
+      .nav-links { display: none; }
+      .hero { padding: 7rem 1.25rem 3rem; }
+      section { padding: 3.5rem 1.25rem; }
+      .pages-table td:first-child { white-space: normal; }
+    }
+  </style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-inner">
+    <a href="#" class="nav-logo">
+      <span class="nav-mark" aria-hidden="true">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <rect x="1" y="8" width="3" height="6" rx="0.5" fill="#fff"/>
+          <rect x="6.5" y="4" width="3" height="10" rx="0.5" fill="#fff"/>
+          <rect x="12" y="1" width="3" height="13" rx="0.5" fill="#fff"/>
+        </svg>
+      </span>
+      <span>Cost Management Power BI</span>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#features">Features</a></li>
+      <li><a href="#report">Report</a></li>
+      <li><a href="#screenshots">Screenshots</a></li>
+      <li><a href="#export">Export</a></li>
+      <li><a href="https://github.com/pgarciaq/cost-mgmt-powerbi-sample">GitHub</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="hero-content">
+    <h1>Red Hat Cost Management<br><span>in Power BI</span></h1>
+    <p>A sample report for FinOps. Windows PowerShell 5.1 downloads Cost Management data to CSV. Power BI Desktop reads those files.</p>
+    <div class="hero-actions">
+      <a href="#screenshots" class="btn btn-primary">View the report</a>
+      <a href="https://github.com/pgarciaq/cost-mgmt-powerbi-sample" class="btn btn-secondary">
+        <svg viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.01 8.01 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        Source code
+      </a>
+    </div>
+  </div>
+  <div class="hero-screenshot">
+    <img src="images/cost-overview.png" alt="Cost overview page with project cost, cluster list, and CPU and memory usage" onclick="openLightbox(this)">
+  </div>
+</header>
+
+<section id="features">
+  <div class="section-inner">
+    <p class="section-label">Features</p>
+    <h2 class="section-title">What the sample does</h2>
+    <p class="section-subtitle">The loader talks to the Cost Management API. The report keeps its pages, measures, and calculated tables, and imports the CSV files.</p>
+
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M4 3a1 1 0 00-1 1v12a1 1 0 001 1h12a1 1 0 001-1V8.414a1 1 0 00-.293-.707l-4.414-4.414A1 1 0 0011.586 3H4zm7 1.5V8a1 1 0 001 1h3.5L11 4.5z"/></svg>
+        </div>
+        <h3>PowerShell CSV loader</h3>
+        <p>Windows PowerShell 5.1 downloads JSON and writes one CSV per dataset. There is no second loader and no database.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a8 8 0 100 16 8 8 0 000-16zM5.5 10a4.5 4.5 0 019 0H5.5z" clip-rule="evenodd"/></svg>
+        </div>
+        <h3>SaaS and self-managed</h3>
+        <p>The defaults are console.redhat.com and the Red Hat SSO token endpoint. A self-managed service passes its own API host and Keycloak token URL.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M3 4a1 1 0 011-1h3v3H4a1 1 0 01-1-1V4zm0 6a1 1 0 011-1h3v8H4a1 1 0 01-1-1v-6zm6-7h7a1 1 0 011 1v2a1 1 0 01-1 1H9V3zm0 6h7a1 1 0 011 1v6a1 1 0 01-1 1H9V9z"/></svg>
+        </div>
+        <h3>OpenShift costs and usage</h3>
+        <p>Daily cost by project, cluster, node, and tag, plus CPU, memory, and volume usage. Overhead can stay undistributed or be distributed through cost models.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path d="M2 11a1 1 0 011-1h2a1 1 0 011 1v5H3a1 1 0 01-1-1v-4zm5-4a1 1 0 011-1h2a1 1 0 011 1v9H8a1 1 0 01-1-1V7zm5-3a1 1 0 011-1h2a1 1 0 011 1v12h-3a1 1 0 01-1-1V4z"/></svg>
+        </div>
+        <h3>Amazon Web Services</h3>
+        <p>One cost file feeds Group By for account, service, region, tag, cost category, and organization. The Key dropdown lists the tag, category, or org unit.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M10 2a1 1 0 01.894.553l1.618 3.236 3.57.52a1 1 0 01.554 1.706l-2.584 2.52.61 3.555a1 1 0 01-1.451 1.054L10 13.347l-3.211 1.697a1 1 0 01-1.451-1.054l.61-3.555-2.584-2.52a1 1 0 01.554-1.706l3.57-.52L9.106 2.553A1 1 0 0110 2z" clip-rule="evenodd"/></svg>
+        </div>
+        <h3>Recommendations</h3>
+        <p>The Optimizations page lists OpenShift recommendations, including short, medium, and long term cost and duration in hours.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon">
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zm0 6a1 1 0 000 2h8a1 1 0 100-2H6z" clip-rule="evenodd"/></svg>
+        </div>
+        <h3>Shared month and currency</h3>
+        <p>OpenShift Details, Cost overview, and Amazon Web Services share one month. Currency is the account currency, shown as a label with its name and symbol.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="report">
+  <div class="section-inner">
+    <p class="section-label">Report</p>
+    <h2 class="section-title">Five pages</h2>
+    <p class="section-subtitle">The screenshots below are from a demo account. AWS account numbers are hidden.</p>
+    <table class="pages-table">
+      <thead>
+        <tr><th>Page</th><th>What it shows</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Cost overview</td><td>Projects, clusters, and tags, with CPU, memory, and volume usage against requests, limits, and capacity.</td></tr>
+        <tr><td>OpenShift Details</td><td>OpenShift grouped by project, cluster, node, or tag, with infrastructure cost, supplementary cost, and month-over-month change.</td></tr>
+        <tr><td>Cost Explorer</td><td>Daily cost for a start and end date, and the leading names for the selected group.</td></tr>
+        <tr><td>Amazon Web Services</td><td>AWS grouped by account, service, region, tag, cost category, or organization.</td></tr>
+        <tr><td>Optimizations</td><td>OpenShift recommendations for the workloads in the export.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section id="screenshots" class="screenshots-section">
+  <div class="section-inner">
+    <p class="section-label">Screenshots</p>
+    <h2 class="section-title">The report</h2>
+    <p class="section-subtitle">Click a screenshot to enlarge it.</p>
+    <div class="screenshots-grid">
+      <figure class="screenshot-item">
+        <img src="images/cost-overview.png" alt="Cost overview with cost by project, clusters, and usage charts" onclick="openLightbox(this)">
+        <figcaption>Cost overview for September, grouped through a selected cluster</figcaption>
+      </figure>
+      <figure class="screenshot-item">
+        <img src="images/openshift-details.png" alt="OpenShift Details grouped by project" onclick="openLightbox(this)">
+        <figcaption>OpenShift Details grouped by project, with overhead distributed through cost models</figcaption>
+      </figure>
+      <figure class="screenshot-item">
+        <img src="images/cost-explorer.png" alt="Cost Explorer daily costs by tag" onclick="openLightbox(this)">
+        <figcaption>Cost Explorer for a tag key, with a daily chart and the top names</figcaption>
+      </figure>
+      <figure class="screenshot-item">
+        <img src="images/amazon-web-services.png" alt="Amazon Web Services grouped by account, with account numbers hidden" onclick="openLightbox(this)">
+        <figcaption>Amazon Web Services grouped by account. Account numbers are hidden.</figcaption>
+      </figure>
+      <figure class="screenshot-item">
+        <img src="images/optimizations.png" alt="Optimizations page listing OpenShift recommendations" onclick="openLightbox(this)">
+        <figcaption>Optimizations, with short, medium, and long term recommendation cost</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="export" class="export-section">
+  <div class="section-inner">
+    <p class="section-label">Export</p>
+    <h2 class="section-title">Load data, then refresh</h2>
+    <p class="section-subtitle">You need Windows PowerShell 5.1, Power BI Desktop, and a Cost Management service account. The client secret stays in <code>data/auth.csv</code>, which is not committed.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div>
+          <h3>Add the service account</h3>
+          <p>Copy <code>auth.csv.sample</code> to <code>data/auth.csv</code> and replace the sample client id and client secret.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div>
+          <h3>Check the proxy, then the account</h3>
+          <p><code>-TestProxy</code> does not read <code>auth.csv</code>. <code>-Test</code> checks the proxy first, then requests a token. Neither command prints the client secret, the access token, or proxy credentials.</p>
+          <pre>powershell.exe -File scripts/Export-CostManagement.ps1 -TestProxy
+powershell.exe -File scripts/Export-CostManagement.ps1 -Test</pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div>
+          <h3>Export</h3>
+          <p>SaaS uses console.redhat.com. A self-managed Cost Management passes <code>-ApiBaseUrl</code> and <code>-TokenUrl</code>. CSV files land in <code>data/export/</code>. The script exits 0 only when every requested dataset succeeds.</p>
+          <pre>powershell.exe -File scripts/Export-CostManagement.ps1 -StartDate 2026-08-01 -EndDate 2026-09-30</pre>
+          <pre>powershell.exe -File scripts/Export-CostManagement.ps1 -TokenUrl https://keycloak.example.com/token -ApiBaseUrl https://cost.example.com</pre>
+        </div>
+      </div>
+      <div class="step">
+        <div class="step-num">4</div>
+        <div>
+          <h3>Refresh the report</h3>
+          <p>Open <code>PowerBI/CostManagement.pbix</code> and refresh it after the export exits 0. Queries read <code>DataFolder\export</code> and <code>DataFolder\static</code>. The <code>DataFolder</code> parameter defaults to this repository's <code>data</code> directory.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <p>Cost Management Power BI sample</p>
+  <p>Apache-2.0 &mdash; <a href="https://github.com/pgarciaq/cost-mgmt-powerbi-sample">GitHub</a></p>
+  <p style="margin-top: 1rem;">Red Hat and the Red Hat logo are trademarks of Red Hat, Inc.</p>
+</footer>
+
+<div class="lightbox" id="lightbox" onclick="closeLightbox()">
+  <img id="lightbox-img" src="" alt="">
+</div>
+
+<script>
+function openLightbox(img) {
+  document.getElementById('lightbox-img').src = img.src;
+  document.getElementById('lightbox-img').alt = img.alt;
+  document.getElementById('lightbox').classList.add('active');
+}
+function closeLightbox() {
+  document.getElementById('lightbox').classList.remove('active');
+}
+document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape') closeLightbox();
+});
+</script>
+
+</body>
+</html>

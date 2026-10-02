@@ -1,10 +1,10 @@
 # PowerShell CSV loader Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+This plan is done. The script, tests, schema files, static lookups, report queries, and docs below are in the repository. The Excel workbooks and the Excel-only screenshots are gone. [Issue 1](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/1) and [issue 7](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/7) are closed. [Issue 2](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/2), [issue 3](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/3), [issue 4](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/4), and [issue 5](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/5) are closed as no-ops. Those four datasets were not added.
 
 **Goal:** Replace the Excel workbooks with a Windows PowerShell 5.1 exporter that writes CSV, and point `PowerBI/CostManagement.pbix` at those files.
 
-**Architecture:** `scripts/Export-CostManagement.ps1` is the entry point. It dot-sources `scripts/CostManagementExport.ps1`, which holds help text, token handling, paging, flattening, and CSV writing. Tests in `scripts/Export-CostManagement.Tests.ps1` call those functions with recorded JSON and never touch the network. `schema/*.columns.txt` is the column contract, copied from the current workbooks before those workbooks are deleted.
+**Architecture:** `scripts/Export-CostManagement.ps1` is the entry point. It dot-sources `scripts/CostManagementExport.ps1`, which holds help text, token handling, paging, flattening, and CSV writing. Tests in `scripts/Export-CostManagement.Tests.ps1` call those functions with recorded JSON and never touch the network. `schema/*.columns.txt` is the column contract, copied from the workbooks before those workbooks were deleted.
 
 **Tech Stack:** Windows PowerShell 5.1, Power BI Desktop for the `.pbix` query change, no extra modules.
 
@@ -26,14 +26,14 @@
 - `Data_Period` is written on every run, including a run that names one other dataset.
 - `auth.csv` and `data/export/` stay gitignored.
 - Keep report pages, relationships, measures, and calculated tables. Do not add Azure, Google Cloud, or new report pages.
-- Capture workbook headers into `schema/` before deleting the workbooks.
-- Do not implement `AWS_Cost_Account_Tags`, `AWS_Group_By_Account`, `AWS_Group_By_Service`, or `AWS_Group_By_Region` in this plan. They are [issue 2](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/2), [issue 3](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/3), [issue 4](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/4), and [issue 5](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/5). The first implementation is [issue 1](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/1).
+- Workbook headers are in `schema/`. The workbooks are gone.
+- `AWS_Cost_Account_Tags`, `AWS_Group_By_Account`, `AWS_Group_By_Service`, and `AWS_Group_By_Region` were not added. [Issue 2](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/2), [issue 3](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/3), [issue 4](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/4), and [issue 5](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/5) are closed as no-ops. Account, service, and region rows stay in `AWS_Daily_Costs`. Tag and cost-category costs stay in that same file.
 
 ---
 
 ## Test plan: red, green, refactor
 
-The test plan is this implementation plan. There is no second document. Every task follows the same cycle, and a task is not done until all three parts have run.
+The test plan is this implementation plan. There is no second document. Every task followed the same cycle.
 
 1. **Red.** Add the assertion to `scripts/Export-CostManagement.Tests.ps1` before the production code exists. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. The new assertion must fail. A pass at this step means the test is not exercising new behavior.
 2. **Green.** Write the smallest code that makes the whole script print `ALL PASS` and exit 0.
@@ -67,7 +67,7 @@ Dataset ids, in this order: `Data_Period`, `Default_Master_Settings`, `OS_Costs_
 - Consumes: nothing
 - Produces: `Get-CostManagementDatasetIds` returns `[string[]]` in the order above. `Get-CostManagementHelpText` returns one `[string]`. The entry script accepts `-Help` as a `[switch]`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `scripts/Export-CostManagement.Tests.ps1`:
 
@@ -108,13 +108,13 @@ Write-Host "ALL PASS"
 exit 0
 ```
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: a parse or command-not-found error because `Get-CostManagementHelpText` does not exist yet. Exit code is not 0.
 
-- [ ] **Step 3: Implement help**
+- [x] **Step 3: Implement help**
 
 Create `scripts/CostManagementExport.ps1` with `Get-CostManagementDatasetIds` and `Get-CostManagementHelpText`. The help string must include `yyyy-MM-dd`, every dataset id, both default URLs, `-Scope` default `api.console`, `-TestProxy`, and three examples: a full run, `-Dataset OS_Costs_Daily`, and a self-managed run that sets `-TokenUrl` and `-ApiBaseUrl`.
 
@@ -149,17 +149,17 @@ throw 'Export is not implemented yet.'
 
 `-Help` must be handled before any auth or network code.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: `ALL PASS` and exit 0.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.ps1 scripts/Export-CostManagement.Tests.ps1
@@ -178,7 +178,7 @@ git commit -m "Add Cost Management exporter help text and test runner."
 - Consumes: `Get-CostManagementDatasetIds`
 - Produces: `ConvertTo-CostManagementField ([object]$Value) -> [string]`. `Write-CostManagementCsv ([string]$Path, [string[]]$Header, [object[]]$Rows)` where each row is an `[ordered]` dictionary keyed by header name. The file is UTF-8 with BOM. The header is written when `$Rows` is empty.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append assertions:
 
@@ -198,27 +198,27 @@ Remove-Item $tmp
 
 `ConvertTo-CostManagementField` joins a list with a comma and skips null items. A scalar null returns `''`.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: FAIL because `ConvertTo-CostManagementField` is missing. Exit code 1.
 
-- [ ] **Step 3: Implement the two functions**
+- [x] **Step 3: Implement the two functions**
 
 `Write-CostManagementCsv` quotes a field when it contains a comma, a quote, or a newline. Quotes inside a field are doubled. Create the parent directory if it is missing.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: `ALL PASS`.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.Tests.ps1
@@ -237,31 +237,31 @@ git commit -m "Write null-safe UTF-8 CSV for Cost Management exports."
 - Consumes: nothing from Task 2
 - Produces: `New-CostManagementTokenSession` with parameters `TokenUrl`, `ClientId`, `ClientSecret`, `Scope`, `Invoke`, `Now`. `Invoke` is a `[scriptblock]` called as `& $Invoke -Method POST -Uri ... -Headers ... -Body ...`. It returns an object with `StatusCode` and `Json`. `Get-CostManagementAccessToken -Session $session` returns the bearer token string and refreshes when `Now` is 4 minutes past `IssuedAt`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Use a fake `$Invoke` that records URIs and returns `access_token = 'tok-1'` the first time and `'tok-2'` the second time. Assert the first URI equals the supplied `-TokenUrl` (`https://keycloak.example.com/token`), the body contains `grant_type=client_credentials`, `scope=api.console`, and the client id, and the body does not get copied into a log variable. Advance `Now` by 5 minutes and assert the second token is `tok-2`.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: FAIL on the missing token function.
 
-- [ ] **Step 3: Implement the session**
+- [x] **Step 3: Implement the session**
 
 Store `IssuedAt` from the `Now` scriptblock. Do not log `ClientSecret` or `access_token`.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: `ALL PASS`.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.Tests.ps1
@@ -281,7 +281,7 @@ git commit -m "Refresh the Cost Management token on a four-minute timer."
 - Consumes: `New-CostManagementTokenSession` and `Get-CostManagementAccessToken` from Task 3. `Invoke` returns `StatusCode` and `Json`.
 - Produces: `Test-CostManagementCredentials` parameters `ClientId`, `ClientSecret`, `ApiBaseUrl`, `TokenUrl`, `Scope`, `Invoke`. Returns an object with `ExitCode` and `Message`. The entry script's `-Test` switch prints `Message` and exits with `ExitCode`. It does not create files under `data/export`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Write a separate fake `Invoke` scriptblock for each case. Do not share one scriptblock closed over parameters. PowerShell 5.1 will not capture those parameters reliably.
 
@@ -295,27 +295,27 @@ Connection failure: the scriptblock throws before returning a status. Assert `Me
 
 Call each case with `-ClientSecret 'client-secret-value'`. Assert `Message` does not contain `client-secret-value` and does not contain `access_token`. Run the entry script with `-Help -Test` and assert exit 0 and that the output contains `yyyy-MM-dd`. `-Help` must not read `auth.csv`. The fake `Invoke` is passed only into `Test-CostManagementCredentials`.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: FAIL because `Test-CostManagementCredentials` does not exist.
 
-- [ ] **Step 3: Implement -Test**
+- [x] **Step 3: Implement -Test**
 
 `Test-CostManagementCredentials` calls the token URL, then `GET` `$ApiBaseUrl + '/api/cost-management/v1/account-settings/'` with `Authorization: Bearer <token>`. Map statuses to the credential lines in the spec. The entry script handles `-Test` only when `-Help` is absent, after the functions are loaded, and before any export directory is created. Task 3c adds the proxy lines in front of this result.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: `ALL PASS`.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.ps1 scripts/Export-CostManagement.Tests.ps1
@@ -341,7 +341,7 @@ git commit -m "Test Cost Management credentials before exporting."
   - `Invoke-CostManagementTest` parameters `TokenUrl`, `ApiBaseUrl`, `GetProxy`, `Connect`, `ReadAuth`. It runs the proxy check first. When the proxy check fails, it does not call `ReadAuth`.
   - Entry `-Test` calls `Invoke-CostManagementTest`. When the proxy check fails, it prints the proxy message and exits 1 without reading `auth.csv`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Use a separate fake for each case.
 
@@ -355,27 +355,27 @@ Proxy failure: the same proxy, and `-Connect` throws. Assert the token line is `
 
 `-Help -TestProxy` exits 0. The unit tests do not run a live `-TestProxy`, because that would use the machine proxy and the network.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: FAIL because `Test-CostManagementProxy` does not exist.
 
-- [ ] **Step 3: Implement the proxy check**
+- [x] **Step 3: Implement the proxy check**
 
 `GetSystemWebProxy` is the production `-GetProxy`. `IsBypassed` selects `bypassed`. A returned proxy selects `proxy` and the request uses `DefaultNetworkCredentials`. A throw from proxy lookup or from `-Connect` selects `failed`. Do not connect directly after `failed`. Strip userinfo before printing or logging the proxy URI. `-Help` still exits before this code.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: `ALL PASS`.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.ps1 scripts/Export-CostManagement.Tests.ps1
@@ -397,7 +397,7 @@ git commit -m "Report the system proxy before sending Cost Management credential
   - `Invoke-CostManagementGet` parameters: `ApiBaseUrl`, `RelativeUrl`, `Session`, `Invoke`. On 401, refresh once and retry. On 429 or 5xx, retry up to 3 times.
   - `Get-CostManagementPages` parameters: `GetPage` scriptblock `(int $Offset) -> object with Count and Data`. Page size 100. Stops on empty `Data` or when the next offset is past `Count`.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 Cover all four cases from the spec:
 
@@ -406,27 +406,27 @@ Cover all four cases from the spec:
 - HTTP 401 once causes one token refresh and one retry against the same API URL. The token URL in the refresh is the session's `TokenUrl`, not `console.redhat.com`.
 - `Invoke-CostManagementGet -ApiBaseUrl https://cost.example.com -RelativeUrl '/api/cost-management/v1/reports/openshift/costs/?filter[limit]=100'` requests exactly `https://cost.example.com/api/cost-management/v1/reports/openshift/costs/?filter[limit]=100`.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: FAIL on the missing paging functions.
 
-- [ ] **Step 3: Implement paging**
+- [x] **Step 3: Implement paging**
 
 `Split-CostManagementDateWindow` splits by day count, first half smaller or equal when the count is odd. Pauses for retries are a `[scriptblock] $Sleep` argument so tests pass `-Sleep { }` and production passes `Start-Sleep -Seconds`.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: `ALL PASS`.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.Tests.ps1
@@ -448,7 +448,7 @@ git commit -m "Page Cost Management JSON and split a failed date window."
 - Consumes: dataset ids from Task 1
 - Produces: `Get-CostManagementRepoRoot` returns the absolute repo root (parent of `scripts/`). `Get-CostManagementSchemaHeader ([string]$DatasetId)` returns `[string[]]` by reading `schema/<DatasetId>.columns.txt` under that root.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```powershell
 $header = Get-CostManagementSchemaHeader 'OS_Costs_Daily'
@@ -461,11 +461,11 @@ Assert-True 'overhead keeps two spaces' ($overhead.Contains("Don't distribute  o
 
 The two spaces are between `distribute` and `overhead`. One space fails this assertion.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Expected: FAIL because the schema file is missing.
 
-- [ ] **Step 3: Write the schema files and static CSVs**
+- [x] **Step 3: Write the schema files and static CSVs**
 
 `schema/OS_Costs_Daily.columns.txt` is one line:
 
@@ -515,17 +515,17 @@ Organization,org_unit_id
 Cost category,aws_category
 ```
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: `ALL PASS`.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add schema data/static scripts/CostManagementExport.ps1 scripts/Export-CostManagement.Tests.ps1
@@ -544,7 +544,7 @@ git commit -m "Record Cost Management CSV column contracts and static lookups."
 - Consumes: `ConvertTo-CostManagementField`, `Write-CostManagementCsv`, `Get-CostManagementSchemaHeader`
 - Produces: `ConvertTo-OpenShiftCostRow` parameters `CurrencyCode`, `GroupByCode`, `DistributedOverhead`, `Day`, `Name`, `ValueRecord`, `TagKey`. Returns an `[ordered]` row whose keys are the `OS_Costs_Daily` header. `Publish-CostManagementDataset` parameters `OutDir`, `DatasetId`, `Header`, `Rows`. Writes `OutDir/.partial/<DatasetId>.csv`, then moves it to `OutDir/<DatasetId>.csv`. On throw before the move, the previous `OutDir/<DatasetId>.csv` stays.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Build one JSON value object:
 
@@ -567,23 +567,23 @@ Assert-True 'missing markup is empty' ($row['values.infrastructure.markup.value'
 
 Then call `Publish-CostManagementDataset` twice into a temp directory: first with one row, then with a scriptblock that throws before returning rows. Assert the CSV from the first publish is still the file in the temp directory.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Expected: FAIL on `ConvertTo-OpenShiftCostRow`.
 
-- [ ] **Step 3: Implement the flattener**
+- [x] **Step 3: Implement the flattener**
 
 Map `infrastructure`, `supplementary`, and `cost` children `raw`, `markup`, `usage`, `total` to `values.<section>.<child>.value` and `.units`. Also map `cost.platform_distributed`, `cost.worker_unallocated_distributed`, and `cost.distributed`. Leave any header key that has no source as `''`.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Expected: `ALL PASS`.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts/CostManagementExport.ps1 scripts/Export-CostManagement.Tests.ps1
@@ -623,7 +623,7 @@ Dataset behavior:
 
 `.gitignore` gains a line `data/export/`.
 
-- [ ] **Step 1: Write failing tests for settings, one OpenShift cost page, project tags for September 2026, an AWS host check, recommendations with a null term, and a failed single-day page**
+- [x] **Step 1: Write failing tests for settings, one OpenShift cost page, project tags for September 2026, an AWS host check, recommendations with a null term, and a failed single-day page**
 
 The project-tags test uses `-EndDate 2026-09-30` and asserts `Filter Month` equals `2026-9`.
 
@@ -656,11 +656,11 @@ Remove-Item $out -Recurse -Force
 
 The recommendations test feeds one recommendation whose short-term object is `$null` and asserts `ST Rec Cost Config` is empty while `cluster_uuid` is copied.
 
-- [ ] **Step 2: Run the test and confirm it fails**
+- [x] **Step 2: Run the test and confirm it fails**
 
 Expected: FAIL on `Export-CostManagementData`.
 
-- [ ] **Step 3: Implement `Export-CostManagementData` and the entry script**
+- [x] **Step 3: Implement `Export-CostManagementData` and the entry script**
 
 The entry script reads `auth.csv` only after `-Help` is handled. Default `-AuthFile` is `<repo>/data/auth.csv`. Default `-OutDir` is `<repo>/data/export`. Parse dates as `yyyy-MM-dd` and throw a message that names that format when parsing fails. Pass `Start-Sleep` as `-Sleep`.
 
@@ -668,7 +668,7 @@ Production requests go through `Invoke-CostManagementWebRequest` from Task 3c, w
 
 Cost and usage URLs use `filter[limit]` and `filter[offset]`. The recommendations URL uses `limit` and `offset`.
 
-- [ ] **Step 4: Run the test and confirm it passes**
+- [x] **Step 4: Run the test and confirm it passes**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
@@ -678,11 +678,11 @@ Also run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.ps1 -He
 
 Expected: exit 0 and the dataset list.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add scripts .gitignore
@@ -693,7 +693,7 @@ git commit -m "Export Cost Management datasets to CSV with recorded-response tes
 
 ### Task 8: Docs, and delete the Excel workbooks
 
-Run this task only after Task 9 has refreshed `CostManagement.pbix` against CSV. Until that refresh works, keep the workbooks. Deleting them first leaves the report with no loader. If Power BI Desktop is unavailable, stop before this task.
+Done. `CostManagement.pbix` reads CSV. The workbooks and the unreferenced Excel images are gone.
 
 **Files:**
 - Modify: `README.md`
@@ -710,7 +710,7 @@ Run this task only after Task 9 has refreshed `CostManagement.pbix` against CSV.
 - Consumes: the entry script's parameters from Task 7
 - Produces: a README whose setup path is auth file, `-Help`, export, Power BI refresh
 
-- [ ] **Step 1: Rewrite `README.md`**
+- [x] **Step 1: Rewrite `README.md`**
 
 Required sections, in order:
 
@@ -727,29 +727,29 @@ Required sections, in order:
 
 Remove Excel setup, Excel refresh, Excel performance, and Excel troubleshooting. Do not leave a legacy Excel section.
 
-- [ ] **Step 2: Rewrite `design/README.MD`**
+- [x] **Step 2: Rewrite `design/README.MD`**
 
 Describe service account to Keycloak token URL to Cost Management API to PowerShell to `data/export` CSV to Power BI. Keep the API paths and the report page names that are still true. Remove the Power Query function catalog as the supported design. Remove image links whose files this task deletes.
 
-- [ ] **Step 3: Align `AGENTS.md`**
+- [x] **Step 3: Align `AGENTS.md`**
 
 State that the Excel workbooks are gone, tests are `powershell.exe -File scripts/Export-CostManagement.Tests.ps1`, and `-ApiBaseUrl` / `-TokenUrl` are the on-prem switches.
 
-- [ ] **Step 4: Delete the workbooks and unreferenced images**
+- [x] **Step 4: Delete the workbooks and unreferenced images**
 
 Confirm `schema/` already contains the headers from Task 5 before deleting any `.xlsx`.
 
-- [ ] **Step 5: Run the tests**
+- [x] **Step 5: Run the tests**
 
 Run: `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`
 
 Expected: `ALL PASS`.
 
-- [ ] **Step 6: Refactor**
+- [x] **Step 6: Refactor**
 
 Re-read `README.md` and `design/README.MD` and remove any leftover Excel setup steps. Do not add datasets. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```powershell
 git add README.md design/README.MD AGENTS.md
@@ -769,11 +769,11 @@ git commit -m "Document the CSV export workflow and remove the Excel workbooks."
 - Consumes: CSV paths from Task 7 and static files from Task 5
 - Produces: a report parameter `DataFolder` whose default is the repo `data` directory. Queries read `DataFolder\export\<file>.csv` and `DataFolder\static\<file>.csv`.
 
-- [ ] **Step 1: Open `PowerBI/CostManagement.pbix` in Power BI Desktop**
+- [x] **Step 1: Open `PowerBI/CostManagement.pbix` in Power BI Desktop**
 
 Apply this task in Power BI Desktop. Do not leave it as a click-path for the user. This step cannot be done by editing the binary `DataModel`. If Desktop is not installed, or a sign-in dialog cannot be completed, stop this task and say which dialog is open. Do not commit a hand-edited `DataModel`.
 
-- [ ] **Step 2: Add the `DataFolder` parameter and replace each Excel source**
+- [x] **Step 2: Add the `DataFolder` parameter and replace each Excel source**
 
 Example for the OpenShift daily cost query. Repeat the same shape for each exported CSV the report loads, and for the three static files:
 
@@ -791,19 +791,19 @@ Apply that pattern to every numeric column (names ending in `.value`, `.unused`,
 
 Keep the existing calculated tables (`DateTable`, `MonthTable`, monthly cost, monthly usage), relationships, measures, and report pages. Keep the blank tag, cost-category, and org-unit rows that already live in the report's Power Query.
 
-- [ ] **Step 3: Save each changed query as text**
+- [x] **Step 3: Save each changed query as text**
 
 Write `powerbi/Data_Period.pq`, `powerbi/Default_Master_Settings.pq`, `powerbi/OS_Costs_Daily.pq`, `powerbi/OS_Cost_Project_Tags.pq`, `powerbi/OS_Cost_Cluster_Projects.pq`, `powerbi/OS_Tag_Keys.pq`, `powerbi/OS_Daily_Usage.pq`, `powerbi/AWS_Daily_Costs.pq`, `powerbi/AWS_Tag_Keys.pq`, `powerbi/AWS_Cost_Categories.pq`, `powerbi/AWS_Org_Units.pq`, `powerbi/Recommendations.pq`, `powerbi/OpenShift_Group_Bys.pq`, `powerbi/Project_Overhead_Cost_Types.pq`, and `powerbi/AWS_Group_Bys.pq`.
 
-- [ ] **Step 4: Refresh the report against a folder that contains the static CSVs and a header-only export**
+- [x] **Step 4: Refresh the report against a folder that contains the static CSVs and a header-only export**
 
 Header-only files are enough to prove the queries promote headers. A live service-account refresh stays manual and is not part of the unit tests.
 
-- [ ] **Step 5: Refactor**
+- [x] **Step 5: Refactor**
 
 With the tests from this task still passing, simplify names and remove duplication. Do not add behavior. Run `powershell.exe -NoProfile -File scripts/Export-CostManagement.Tests.ps1`. Expected: `ALL PASS`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```powershell
 git add PowerBI/CostManagement.pbix powerbi

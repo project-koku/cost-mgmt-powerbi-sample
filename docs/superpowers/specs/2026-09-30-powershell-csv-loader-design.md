@@ -130,14 +130,14 @@ The token line is first, then the API line. Any HTTP status counts as a response
 
 Dataset ids for this implementation are the CSV file names without `.csv`: `Data_Period`, `Default_Master_Settings`, `OS_Costs_Daily`, `OS_Cost_Project_Tags`, `OS_Cost_Cluster_Projects`, `OS_Tag_Keys`, `OS_Daily_Usage`, `AWS_Daily_Costs`, `AWS_Tag_Keys`, `AWS_Cost_Categories`, `AWS_Org_Units`, and `Recommendations`. `Data_Period` is written on every run from `-StartDate` and `-EndDate`, including a run that names one other dataset.
 
-These datasets are not in the current workbooks or report. They are left for a later iteration so the first implementation does not invent them. Account, service, and region rows remain inside `AWS_Daily_Costs`.
+Account, service, and region cost rows stay inside `AWS_Daily_Costs`. Tag and cost-category costs stay in that same file. The Amazon Web Services page selects them with Group By. These separate files were not added. The issues are closed as no-ops:
 
 - [AWS cost account tags](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/2)
 - [AWS group-by account CSV](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/3)
 - [AWS group-by service CSV](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/4)
 - [AWS group-by region CSV](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/5)
 
-The first implementation is tracked in [issue 1](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/1).
+The loader described here is [issue 1](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/1), which is closed. The report pages are [issue 7](https://github.com/pgarciaq/cost-mgmt-powerbi-sample/issues/7), which is closed.
 
 ### `data/static/`
 
@@ -147,17 +147,17 @@ Committed CSV files for worksheets that do not come from the API:
 - Project overhead cost types (distributed and non-distributed)
 - AWS group-by list
 
-Header rows match the current worksheets. The blank tag, cost-category, and org-unit rows stay in the report's Power Query, where they already live.
+Header rows are the ones saved in `schema/`. The blank tag, cost-category, and org-unit rows stay in the report's Power Query.
 
 `data/static/Project_Overhead_Cost_Types.csv` keeps the workbook text for the non-distributed row. The description is exactly `Don't distribute  overhead costs`, with two spaces between `distribute` and `overhead`. The unit test reads that file and requires those two spaces. One space fails the test.
 
 ### `schema/`
 
-One text file per exported CSV. Each file is the header row, comma-separated. Implementation reads those headers from the current workbooks first, commits `schema/`, and then deletes the workbooks. After that, `schema/` is the column contract. Tests compare script output to these files.
+One text file per exported CSV. Each file is the header row, comma-separated. Those headers were copied from the workbooks, `schema/` was committed, and the workbooks were deleted. `schema/` is the column contract. Tests compare script output to these files.
 
 ### Power BI
 
-The report queries that today read Excel worksheets are switched to the CSV files with the same headers. Report pages, relationships, measures, and calculated tables stay. `DataModel` inside the `.pbix` is a binary, so the query change is made in Power BI Desktop and the M for those queries is also saved under `powerbi/` as plain text for review.
+The report queries read the CSV files with the same headers. Report pages, relationships, measures, and calculated tables stay. `DataModel` inside the `.pbix` is a binary. The query change was made in Power BI Desktop, and the M for those queries is saved under `powerbi/` as plain text.
 
 ## Authentication
 
@@ -260,7 +260,7 @@ The folder path inside the report is a parameter, defaulting to the repo's `data
 
 ## Documentation and Excel workbooks
 
-The new `.pbix` reads CSV. The Excel workbooks cannot feed it, so this change deletes them:
+The `.pbix` reads CSV. The Excel workbooks were deleted:
 
 - `data/Hello.xlsx`
 - `data/cost_management_data/AWS_Daily_Costs.xlsx`
@@ -268,14 +268,14 @@ The new `.pbix` reads CSV. The Excel workbooks cannot feed it, so this change de
 - `data/cost_management_data/OpenShift_Daily_Usage.xlsx`
 - `data/cost_management_data/Optimizations.xlsx`
 
-Header rows are copied into `schema/` before those files are deleted.
+Header rows were copied into `schema/` before those files were deleted.
 
-The same change rewrites the docs so the supported workflow is the script, then the report:
+The docs describe the script, then the report:
 
-- `README.md` describes credentials, `-Help`, dates, SaaS and self-managed URLs, the export, and the Power BI refresh. Excel setup, Excel refresh, and Excel performance troubleshooting come out.
-- `design/README.MD` describes PowerShell to CSV to Power BI. The Power Query function catalog is removed as the supported design. API endpoint and report-page descriptions that are still true stay.
+- `README.md` describes credentials, `-Help`, dates, SaaS and self-managed URLs, the export, and the Power BI refresh.
+- `design/README.MD` describes PowerShell to CSV to Power BI. API endpoint and report-page descriptions stay.
 - `AGENTS.md` matches this spec.
-- README screenshots that only show the Excel refresh are deleted, along with any image that no remaining doc links.
+- Screenshots that only showed the Excel refresh are gone, along with any image that no remaining doc links.
 
 There is no legacy Excel section.
 
