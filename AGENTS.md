@@ -8,7 +8,7 @@ A sample that loads Red Hat Cost Management data into `PowerBI/CostManagement.pb
 
 ## Loader
 
-Follow `docs/superpowers/specs/2026-09-30-powershell-csv-loader-design.md` before changing how data is fetched or loaded.
+Follow `docs/specs/2026-09-30-powershell-csv-loader-design.md` before changing how data is fetched or loaded.
 
 The intended loader is Windows PowerShell 5.1. It downloads JSON from the Cost Management API and writes CSV. The Power BI report imports those CSV files. The Excel workbooks are gone. Do not add a second loader beside the script.
 
