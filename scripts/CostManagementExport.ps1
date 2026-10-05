@@ -131,7 +131,12 @@ function Get-CostManagementAccessToken {
     if ($refresh) {
         $body = 'grant_type=client_credentials&client_id=' + [uri]::EscapeDataString($Session.ClientId) + '&client_secret=' + [uri]::EscapeDataString($Session.ClientSecret) + '&scope=' + [uri]::EscapeDataString($Session.Scope)
         $response = & $Session.Invoke -Method POST -Uri $Session.TokenUrl -Headers @{ 'Content-Type' = 'application/x-www-form-urlencoded' } -Body $body
-        $Session.AccessToken = $response.Json.access_token
+        $status = 0
+        if ($null -ne $response.StatusCode) { $status = [int]$response.StatusCode }
+        $token = ''
+        if ($null -ne $response.Json) { $token = [string]$response.Json.access_token }
+        if ($status -ne 200 -or -not $token) { throw ('status=' + $status) }
+        $Session.AccessToken = $token
         $Session.IssuedAt = $now
     }
     return [string]$Session.AccessToken
@@ -639,6 +644,7 @@ function Write-CostManagementLog {
 function Get-CostManagementAccount {
     param($Session, [string]$ApiBaseUrl, [scriptblock]$Invoke, [scriptblock]$Sleep)
     $settingsResponse = Invoke-CostManagementGet -ApiBaseUrl $ApiBaseUrl -RelativeUrl '/api/cost-management/v1/account-settings/' -Session $Session -Invoke $Invoke -Sleep $Sleep
+    if ([int]$settingsResponse.StatusCode -ne 200) { throw ('status=' + [int]$settingsResponse.StatusCode + ' /api/cost-management/v1/account-settings/') }
     $settings = Get-CostManagementJsonField -Object $settingsResponse.Json -Name 'data'
     $code = [string](Get-CostManagementJsonField -Object $settings -Name 'currency')
     $costType = [string](Get-CostManagementJsonField -Object $settings -Name 'cost_type')

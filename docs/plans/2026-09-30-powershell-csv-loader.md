@@ -49,7 +49,7 @@ The tests call functions with recorded HTTP responses. They do not call the netw
 - `schema/<DatasetId>.columns.txt` — one header line per dataset.
 - `data/static/OpenShift_Group_Bys.csv`, `data/static/Project_Overhead_Cost_Types.csv`, `data/static/AWS_Group_Bys.csv`
 - `data/export/` — created at runtime, gitignored.
-- `powerbi/*.pq` — text copy of the report queries after the Desktop edit.
+- `PowerBI/*.pq` — text copy of the report queries after the Desktop edit.
 - `README.md`, `design/README.MD`, `AGENTS.md` — supported workflow.
 
 Dataset ids, in this order: `Data_Period`, `Default_Master_Settings`, `OS_Costs_Daily`, `OS_Cost_Project_Tags`, `OS_Cost_Cluster_Projects`, `OS_Tag_Keys`, `OS_Daily_Usage`, `AWS_Daily_Costs`, `AWS_Tag_Keys`, `AWS_Cost_Categories`, `AWS_Org_Units`, `Recommendations`.
@@ -763,11 +763,11 @@ git commit -m "Document the CSV export workflow and remove the Excel workbooks."
 
 **Files:**
 - Modify: `PowerBI/CostManagement.pbix` in Power BI Desktop
-- Create: `powerbi/OS_Costs_Daily.pq` and one `.pq` file per query whose source changes
+- Create: `PowerBI/OS_Costs_Daily.pq` and one `.pq` file per query whose source changes
 
 **Interfaces:**
 - Consumes: CSV paths from Task 7 and static files from Task 5
-- Produces: a report parameter `DataFolder` whose default is the repo `data` directory. Queries read `DataFolder\export\<file>.csv` and `DataFolder\static\<file>.csv`.
+- Produces: a report parameter `DataFolder`. `PowerBI/DataFolder.pq` stores the placeholder `C:\path\to\cost-mgmt-powerbi-sample\data`. Queries read `DataFolder\export\<file>.csv` and `DataFolder\static\<file>.csv`. Before the first refresh, set `DataFolder` in Power BI Desktop to this clone's `data` directory. Power BI loads the path saved in `DataModel`.
 
 - [x] **Step 1: Open `PowerBI/CostManagement.pbix` in Power BI Desktop**
 
@@ -793,7 +793,7 @@ Keep the existing calculated tables (`DateTable`, `MonthTable`, monthly cost, mo
 
 - [x] **Step 3: Save each changed query as text**
 
-Write `powerbi/Data_Period.pq`, `powerbi/Default_Master_Settings.pq`, `powerbi/OS_Costs_Daily.pq`, `powerbi/OS_Cost_Project_Tags.pq`, `powerbi/OS_Cost_Cluster_Projects.pq`, `powerbi/OS_Tag_Keys.pq`, `powerbi/OS_Daily_Usage.pq`, `powerbi/AWS_Daily_Costs.pq`, `powerbi/AWS_Tag_Keys.pq`, `powerbi/AWS_Cost_Categories.pq`, `powerbi/AWS_Org_Units.pq`, `powerbi/Recommendations.pq`, `powerbi/OpenShift_Group_Bys.pq`, `powerbi/Project_Overhead_Cost_Types.pq`, and `powerbi/AWS_Group_Bys.pq`.
+Write `PowerBI/Data_Period.pq`, `PowerBI/Default_Master_Settings.pq`, `PowerBI/OS_Costs_Daily.pq`, `PowerBI/OS_Cost_Project_Tags.pq`, `PowerBI/OS_Cost_Cluster_Projects.pq`, `PowerBI/OS_Tag_Keys.pq`, `PowerBI/OS_Daily_Usage.pq`, `PowerBI/AWS_Daily_Costs.pq`, `PowerBI/AWS_Tag_Keys.pq`, `PowerBI/AWS_Cost_Categories.pq`, `PowerBI/AWS_Org_Units.pq`, `PowerBI/Recommendations.pq`, `PowerBI/OpenShift_Group_Bys.pq`, `PowerBI/Project_Overhead_Cost_Types.pq`, and `PowerBI/AWS_Group_Bys.pq`.
 
 - [x] **Step 4: Refresh the report against a folder that contains the static CSVs and a header-only export**
 
@@ -806,7 +806,7 @@ With the tests from this task still passing, simplify names and remove duplicati
 - [x] **Step 6: Commit**
 
 ```powershell
-git add PowerBI/CostManagement.pbix powerbi
+git add PowerBI/CostManagement.pbix PowerBI
 git commit -m "Load Cost Management CSVs in the Power BI report."
 ```
 

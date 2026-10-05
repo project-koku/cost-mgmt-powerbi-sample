@@ -157,7 +157,7 @@ One text file per exported CSV. Each file is the header row, comma-separated. Th
 
 ### Power BI
 
-The report queries read the CSV files with the same headers. Report pages, relationships, measures, and calculated tables stay. `DataModel` inside the `.pbix` is a binary. The query change was made in Power BI Desktop, and the M for those queries is saved under `powerbi/` as plain text.
+The report queries read the CSV files with the same headers. Report pages, relationships, measures, and calculated tables stay. `DataModel` inside the `.pbix` is a binary. The query change was made in Power BI Desktop, and the M for those queries is saved under `PowerBI/` as plain text.
 
 ## Authentication
 
@@ -254,9 +254,9 @@ Implementation updates `PowerBI/CostManagement.pbix` in Power BI Desktop:
 
 1. Point the worksheet queries at the CSV files in `data/export` and `data/static`.
 2. Keep column names, relationships, report pages, and the calculated tables (`DateTable`, `MonthTable`, and the monthly cost and usage tables).
-3. Save the M for the changed queries under `powerbi/` so the diff is readable. The `.pbix` remains the file FinOps users open.
+3. Save the M for the changed queries under `PowerBI/` so the diff is readable. The `.pbix` remains the file FinOps users open.
 
-The folder path inside the report is a parameter, defaulting to the repo's `data` directory, so the user does not edit a hard-coded `C:\git\...` path.
+The folder path inside the report is the `DataFolder` parameter. `PowerBI/DataFolder.pq` stores the placeholder `C:\path\to\cost-mgmt-powerbi-sample\data`. `File.Contents` requires that absolute path. Before the first refresh, set `DataFolder` in Power BI Desktop to this clone's `data` directory. Queries read `DataFolder\export\<file>.csv` and `DataFolder\static\<file>.csv`. Power BI loads the path saved in the binary `DataModel`.
 
 ## Documentation and Excel workbooks
 
@@ -295,7 +295,7 @@ scripts/Export-CostManagement.Tests.ps1    unit tests, no network
 data/static/*.csv
 data/export/                  gitignored, created by a run
 schema/*.columns.txt
-powerbi/                      M for the CSV-backed queries
+PowerBI/                      M for the CSV-backed queries
 PowerBI/CostManagement.pbix   updated in Power BI Desktop
 README.md                     supported workflow
 design/README.MD              architecture

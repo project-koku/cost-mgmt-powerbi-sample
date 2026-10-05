@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - main
-      - pgarciaq-powershell
     paths:
       - "website/**"
       - ".github/workflows/pages.yml"

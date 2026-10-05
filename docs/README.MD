@@ -8,7 +8,7 @@ The report in `PowerBI/CostManagement.pbix` shows Cost Management data for FinOp
 2. The script requests a token from `-TokenUrl`. The default is `https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token` with scope `api.console`.
 3. It calls `-ApiBaseUrl`. The default is `https://console.redhat.com`.
 4. It writes one CSV per dataset, plus `export.log` when a call fails.
-5. Power BI refresh loads `DataFolder\export` and `DataFolder\static`.
+5. Before the first refresh, set `DataFolder` to this clone's `data` directory. Power BI then loads `DataFolder\export` and `DataFolder\static`.
 
 A self-managed Cost Management uses its own API host and Keycloak token URL through `-ApiBaseUrl` and `-TokenUrl`.
 

@@ -25,7 +25,7 @@ Cost Management emits data. This repository owns the report template. Do not add
 
 ## Power BI
 
-Keep the existing report pages, measures, and calculated tables. Change queries in Power BI Desktop, and save a text copy of the changed M under `powerbi/`. Leave the binary `DataModel` inside the `.pbix` for Power BI Desktop to rewrite.
+Keep the existing report pages, measures, and calculated tables. Change queries in Power BI Desktop, and save a text copy of the changed M under `PowerBI/`. Leave the binary `DataModel` inside the `.pbix` for Power BI Desktop to rewrite.
 
 Run `powershell.exe -File scripts/Export-CostManagement.Tests.ps1` after changing the loader. Those tests use Windows PowerShell 5.1 and do not call the network.
 

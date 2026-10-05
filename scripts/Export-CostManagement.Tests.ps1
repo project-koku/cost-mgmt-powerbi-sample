@@ -66,6 +66,30 @@ $script:Clock = $script:Clock.AddMinutes(5)
 $secondToken = Get-CostManagementAccessToken -Session $tokenSession
 Assert-True 'refreshed token' ($secondToken -eq 'tok-2')
 
+$badTokenSession = New-CostManagementTokenSession -TokenUrl 'https://keycloak.example.com/token' -ClientId 'id' -ClientSecret 'client-secret-value' -Scope 'api.console' -Invoke { param($Method, $Uri, $Headers, $Body) return [pscustomobject]@{ StatusCode = 401; Json = $null; Body = 'client-secret-value' } } -Now { Get-Date }
+$badTokenThrew = $false
+$badTokenMessage = ''
+try {
+    Get-CostManagementAccessToken -Session $badTokenSession | Out-Null
+} catch {
+    $badTokenThrew = $true
+    $badTokenMessage = [string]$_.Exception.Message
+}
+Assert-True 'bad token throws' $badTokenThrew
+Assert-True 'bad token status' ($badTokenMessage -match 'status=401')
+Assert-True 'bad token leaves issued at unset' ($null -eq $badTokenSession.IssuedAt)
+Assert-True 'bad token hides secret' ($badTokenMessage -notmatch 'client-secret-value')
+
+$emptyTokenSession = New-CostManagementTokenSession -TokenUrl 'https://keycloak.example.com/token' -ClientId 'id' -ClientSecret 'client-secret-value' -Scope 'api.console' -Invoke { param($Method, $Uri, $Headers, $Body) return [pscustomobject]@{ StatusCode = 200; Json = @{}; Body = '' } } -Now { Get-Date }
+$emptyTokenThrew = $false
+try {
+    Get-CostManagementAccessToken -Session $emptyTokenSession | Out-Null
+} catch {
+    $emptyTokenThrew = $true
+}
+Assert-True 'token without access_token throws' $emptyTokenThrew
+Assert-True 'token without access_token leaves issued at unset' ($null -eq $emptyTokenSession.IssuedAt)
+
 $rejectedInvoke = {
     param($Method, $Uri, $Headers, $Body)
     return [pscustomobject]@{ StatusCode = 401; Json = $null }
@@ -309,6 +333,29 @@ Assert-True 'settings currency code' ($settingsRow.code -eq 'USD')
 Assert-True 'settings cost type' ($settingsRow.'Default_Configurations.data.cost_type' -eq 'calculated')
 Assert-True 'data period written with one dataset' ((Get-Content -Raw (Join-Path $settingsDir 'Data_Period.csv')) -match '2026-09-01')
 Remove-Item $settingsDir -Recurse -Force
+
+$script:SettingsDeniedUrls = @()
+$settingsDeniedInvoke = {
+    param($Method, $Uri, $Headers, $Body)
+    $u = [string]$Uri
+    $script:SettingsDeniedUrls += $u
+    if ($u -like '*/token') { return [pscustomobject]@{ StatusCode = 200; Json = @{ access_token = 'tok' }; Body = '' } }
+    if ($u -like '*/account-settings/*') { return [pscustomobject]@{ StatusCode = 403; Json = $null; Body = 'denied' } }
+    if ($u -like '*/currency/*') { return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(@{ code = 'USD' }) }; Body = '' } }
+    return [pscustomobject]@{ StatusCode = 200; Json = @{ data = @(); meta = @{ count = 0 } }; Body = '' }
+}
+$settingsDeniedSession = New-CostManagementTokenSession -TokenUrl 'https://keycloak.example.com/token' -ClientId 'id' -ClientSecret 'secret' -Scope 'api.console' -Invoke $settingsDeniedInvoke -Now { Get-Date }
+$settingsDeniedThrew = $false
+$settingsDeniedMessage = ''
+try {
+    Get-CostManagementAccount -Session $settingsDeniedSession -ApiBaseUrl 'https://cost.example.com' -Invoke $settingsDeniedInvoke -Sleep { } | Out-Null
+} catch {
+    $settingsDeniedThrew = $true
+    $settingsDeniedMessage = [string]$_.Exception.Message
+}
+Assert-True 'settings 403 throws' $settingsDeniedThrew
+Assert-True 'settings 403 status' ($settingsDeniedMessage -match 'status=403')
+Assert-True 'settings 403 skips currency' (-not (($script:SettingsDeniedUrls -join ' ') -match '/currency/'))
 
 $script:CostUrls = @()
 $costDir = Join-Path $env:TEMP ("cm-cost-" + [guid]::NewGuid().ToString())
